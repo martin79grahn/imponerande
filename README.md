@@ -3,7 +3,7 @@
 Ett svenskt trampolinspel gjort i Godot 4.5. Du är ett barn som studsar på trampolinen i trädgården och gör trick för att imponera på mamma eller pappa. Föräldern sitter i trädgårdsstolen, tittar på och håller upp en poänglapp efter varje hopp. Men gör du samma trick för många gånger börjar de titta i mobilen i stället.
 
 **Spela i webbläsaren:** <https://martin79grahn.github.io/imponerande/>, på datorn eller mobilen.
-**Android:** ladda ner `Imponerande-v1.0.0.apk` från [Releases](https://github.com/martin79grahn/imponerande/releases), öppna filen på telefonen och tillåt installation från den källan när Android frågar.
+**Android:** ladda ner den senaste APK:n från [Releases](https://github.com/martin79grahn/imponerande/releases), öppna filen på telefonen och tillåt installation från den källan när Android frågar.
 
 ## Så spelar du
 
@@ -19,7 +19,7 @@ Ett svenskt trampolinspel gjort i Godot 4.5. Du är ett barn som studsar på tra
 | --- | --- | --- |
 | Raka hoppet | studsa bara | 1 |
 | Stjärnhopp | TRICK | 1 |
-| Rumpstuds | håll ↓ när du landar (flera i rad ger en kedja) | 1 |
+| Rumpstuds | håll ↓ när du landar (flera i rad ger en kedja). Barnet säger "Det är ETT trick!" varje gång | 1 |
 | Knästuds | håll ← när du landar | 2 |
 | Magstuds | håll → när du landar | 2 |
 | Volt bakåt | ← + TRICK | 3 |
@@ -49,13 +49,13 @@ M stänger av och på ljudet, F11 växlar helskärm och T visar knapparna för p
 
 ## Grafik och ljud
 
-- **Grafiken** är i pappersfigurstil, med platta färger, svarta konturer, stora runda huvuden och vantar, ritad i 320×180 pixlar så att den blir pixlig som ett gammalt 8-bitarsspel. Allt ritas i kod: barnen och föräldrarna (`art.gd`), en röd stuga med vita knutar, björk, staket, granar och en svensk flagga som fladdrar i vinden.
+- **Grafiken** är i pappersfigurstil, med platta färger, svarta konturer, stora runda huvuden och vantar, ritad i 320×180 pixlar så att den blir pixlig som ett gammalt 8-bitarsspel. Skärmen är 640×360, så runda former får lite finare pixlar medan text och detaljer behåller den grova stilen. Allt ritas i kod: barnen och föräldrarna (`art.gd`), en röd stuga med vita knutar, björk, staket, granar och en svensk flagga som fladdrar i vinden.
 - **Bakgrunden lever** (`sky.gd`):
   - Dygnet går: soluppgång, dag, solnedgång och natt med stjärnor, måne och tända fönster.
   - Moln driver, fåglar flyger förbi i plogformation, och ibland syns ett flygplan.
   - Vädret är sol, molnigt, regn, snö eller storm, och det kan slå om mitt i en runda.
   - I storm blixtrar och åskar det och regnet faller snett. Barnens hår, flätor, hästsvansar och toppluvor fladdrar, och björken och flaggan slits i vinden.
-- **Ljudet** är 8-bit och görs av `tools/make_sounds.py`: trampolinens "boing", rumpstuds, trick, krasch, applåder, åska, regn och vind, plus två musikslingor.
+- **Ljudet** är 8-bit och görs av `tools/make_sounds.py`: trampolinens "boing", rumpstuds, trick, krasch, applåder, åska, regn och vind, plus två musikslingor. I spelet går en egen låt i 80-talets new wave-stil. Barnets röst är talsyntes (espeak-ng) som krossats till 8-bit-ljud.
 - **Typsnittet** är ett eget pixeltypsnitt med Å, Ä och Ö (`tools/make_font.py`).
 
 ## Filer

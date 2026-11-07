@@ -51,6 +51,8 @@ var best_jump := 0
 var popups: Array = []          # {text, t, col}
 var line := ""                  # förälderns replik
 var line_t := 0.0
+var kid_line := ""              # barnets egen replik
+var kid_line_t := 0.0
 var card := 0
 var card_t := 0.0
 var react := "tittar"
@@ -148,6 +150,7 @@ func update(dt: float, held: Dictionary) -> void:
 	attention = clampf(attention - dt * 0.05, 0.0, 1.0)
 	perfect_t = maxf(0.0, perfect_t - dt)
 	line_t = maxf(0.0, line_t - dt)
+	kid_line_t = maxf(0.0, kid_line_t - dt)
 	card_t = maxf(0.0, card_t - dt)
 	react_t = maxf(0.0, react_t - dt)
 	for p in popups:
@@ -310,6 +313,10 @@ func _land(held: Dictionary) -> void:
 		_popup("+%d" % p, Color.WHITE)
 	# föräldern reagerar och håller upp en lapp
 	sounds.append("rumpa" if style == "rumpa" else "land")
+	if style == "rumpa":
+		kid_line = "DET ÄR ETT TRICK!"
+		kid_line_t = 1.3
+		sounds.append("ett_trick")
 	if ids == ["rakt"]:
 		attention = maxf(0.0, attention - 0.08)
 		if randf() < 0.2:

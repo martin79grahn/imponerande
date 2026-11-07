@@ -10,6 +10,8 @@ const SkyScript := preload("res://sky.gd")
 
 const W := 320.0
 const H := 180.0
+## Viewporten är dubbelt så stor som spelets koordinater, så pixlarna blir hälften så stora.
+const PX := 2.0
 const SAVE := "user://save.cfg"
 const GOLD := Color("#ffe14d")
 const PANEL := Color(0.06, 0.05, 0.12, 0.86)
@@ -56,6 +58,7 @@ func _ready() -> void:
 	_setup_audio()
 	_play_music("musik_meny")
 	get_tree().set_auto_accept_quit(false)
+	scale = Vector2(PX, PX)
 
 
 # ================================================================ sparning
@@ -100,7 +103,7 @@ func _setup_audio() -> void:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		sfx.append(p)
-	for n in ["studs", "rumpa", "trick", "land", "krasch", "applad", "oj", "aska", "regn", "vind", "niva", "meny", "valj", "lapp", "musik_meny", "musik_spel"]:
+	for n in ["studs", "rumpa", "trick", "land", "krasch", "applad", "oj", "aska", "regn", "vind", "niva", "meny", "valj", "lapp", "ett_trick", "musik_meny", "musik_spel"]:
 		var s: AudioStreamWAV = load("res://assets/sfx/%s.wav" % n)
 		if n in ["regn", "vind", "musik_meny", "musik_spel"]:
 			s.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -207,11 +210,11 @@ func _input(event: InputEvent) -> void:
 		if event.pressed:
 			if event.device != InputEvent.DEVICE_ID_EMULATION:
 				touch_on = true          # en riktig pekskärm (inte musen)
-			_touch_down(event.index, event.position)
+			_touch_down(event.index, event.position / PX)
 		else:
 			fingers.erase(event.index)
 	elif event is InputEventScreenDrag and fingers.has(event.index) and fingers[event.index].has("pad"):
-		fingers[event.index] = _pad_dirs(event.position)
+		fingers[event.index] = _pad_dirs(event.position / PX)
 
 
 func _notification(what: int) -> void:
@@ -234,13 +237,18 @@ func _toggle_sound() -> void:
 
 
 # ---------------------------------------------------------------- pekskärmen
+## Skärmens storlek i spelets koordinater.
+func vsize() -> Vector2:
+	return get_viewport_rect().size / PX
+
+
 func pad_center() -> Vector2:
 	return Vector2(maxf(30.0, ox * 0.5 + 6.0), 142)
 
 
 ## STUDS och TRICK i en kolumn längst till höger, så att de inte täcker föräldern.
 func btn_studs() -> Vector2:
-	return Vector2(get_viewport_rect().size.x - maxf(22.0, ox * 0.5 + 4.0), 152)
+	return Vector2(vsize().x - maxf(22.0, ox * 0.5 + 4.0), 152)
 
 
 func btn_trick() -> Vector2:
@@ -248,7 +256,7 @@ func btn_trick() -> Vector2:
 
 
 func btn_paus() -> Rect2:
-	return Rect2(get_viewport_rect().size.x / 2 - 15, 3, 30, 12)
+	return Rect2(vsize().x / 2 - 15, 3, 30, 12)
 
 
 func _pad_dirs(pos: Vector2) -> Dictionary:
@@ -316,7 +324,7 @@ func _menu_tap(p: Vector2) -> void:
 # ================================================================ huvudloopen
 func _physics_process(dt: float) -> void:
 	t += dt
-	ox = (get_viewport_rect().size.x - W) / 2.0
+	ox = (vsize().x - W) / 2.0
 	_read_input()
 	var time_speed := 0.35 if state != "spel" else 0.05
 	if state != "paus":
@@ -467,7 +475,7 @@ func _finish() -> void:
 
 # ================================================================ ritning
 func _draw() -> void:
-	var vw := get_viewport_rect().size.x
+	var vw := vsize().x
 	draw_set_transform(Vector2(ox, 0))
 	_scene()
 	match state:
@@ -488,7 +496,7 @@ func _draw() -> void:
 
 ## Himlen, trädgården, trampolinen, föräldern och barnet, med väder och kvällsmörker.
 func _scene() -> void:
-	draw_rect(Rect2(-ox, 0, get_viewport_rect().size.x, H), Color("#1a1a2a"))
+	draw_rect(Rect2(-ox, 0, vsize().x, H), Color("#1a1a2a"))
 	sky.draw_back(self)
 	var nt: float = sky.night()
 	Art.garden_back(self, sky.wind, t, nt)
@@ -518,7 +526,7 @@ func _scene() -> void:
 	# mörker, molnighet och lampor
 	var dark := clampf(nt * 0.42 + sky.gloom() * 0.15, 0.0, 0.55)
 	if dark > 0.0:
-		draw_rect(Rect2(-ox, 0, get_viewport_rect().size.x, H), Color(0.04, 0.04, 0.16, dark))
+		draw_rect(Rect2(-ox, 0, vsize().x, H), Color(0.04, 0.04, 0.16, dark))
 	Art.lights(self, nt)
 
 
@@ -586,6 +594,11 @@ func _draw_hud() -> void:
 		var r2 := Rect2(clampf(246 - w, 4 - ox, 300), 60, w, 13)
 		Art.bubble(self, r2, Vector2(258, 96))
 		text(g.line, r2.position + Vector2(4, 3), Art.INK, 1, 0, false)
+	if g.kid_line_t > 0.0:
+		var kw: int = g.kid_line.length() * 6 + 8
+		var kr := Rect2(Game.CX - 36 - kw, 92, kw, 13)
+		Art.bubble(self, kr, Vector2(Game.CX - 8, 116))
+		text(g.kid_line, kr.position + Vector2(4, 3), Art.INK, 1, 0, false)
 	if g.perfect_t > 0.0:
 		text("PERFEKT!", Vector2(Game.CX, Game.MAT_Y + 14), Color("#7aff8a"), 1, 1)
 	for p in g.popups:
@@ -630,7 +643,7 @@ func start_btn() -> Rect2:
 
 
 func _draw_choose() -> void:
-	draw_rect(Rect2(-ox, 0, get_viewport_rect().size.x, H), Color(0, 0, 0, 0.45))
+	draw_rect(Rect2(-ox, 0, vsize().x, H), Color(0, 0, 0, 0.45))
 	text("TILLBAKA", Vector2(6, 4), Color(1, 1, 1, 0.7))
 	text("VÄLJ BARN", Vector2(160, 30), GOLD if sel == 0 else Color.WHITE, 1, 1)
 	for i in 5:
@@ -655,7 +668,7 @@ func _draw_choose() -> void:
 
 
 func _draw_result() -> void:
-	draw_rect(Rect2(-ox, 0, get_viewport_rect().size.x, H), Color(0, 0, 0, 0.5))
+	draw_rect(Rect2(-ox, 0, vsize().x, H), Color(0, 0, 0, 0.5))
 	panel(Rect2(40, 14, 240, 150))
 	text("RUNDAN ÄR SLUT!", Vector2(160, 22), GOLD, 2, 1)
 	text(Data.PARENTS[par].namn + " SÄGER:", Vector2(160, 44), Color.WHITE, 1, 1)
@@ -675,7 +688,7 @@ func _draw_result() -> void:
 
 
 func _draw_book() -> void:
-	draw_rect(Rect2(-ox, 0, get_viewport_rect().size.x, H), Color(0, 0, 0, 0.6))
+	draw_rect(Rect2(-ox, 0, vsize().x, H), Color(0, 0, 0, 0.6))
 	panel(Rect2(2, 2, 316, 176))
 	text("TRICKBOK", Vector2(160, 6), GOLD, 1, 1)
 	for i in Data.BOK.size():
@@ -690,7 +703,7 @@ func _draw_book() -> void:
 
 
 func _draw_touch() -> void:
-	var vw := get_viewport_rect().size.x
+	var vw := vsize().x
 	if state != "spel":
 		return
 	var pc := pad_center()

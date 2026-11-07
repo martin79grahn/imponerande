@@ -167,16 +167,43 @@ menu_bass = [(48, 4), (55, 4), (53, 4), (55, 4), (48, 4), (52, 4), (55, 4), (55,
              (53, 4), (48, 4), (50, 4), (53, 4), (55, 4), (55, 4), (48, 8)]
 save("musik_meny", song(116, menu_lead, menu_bass, "k.h.s.h.k.h.s.hh"), 0.7)
 
-# spelet: snabbare och studsigare, G-dur, med en hoppande melodi
-game_lead = [(67, 1), (0, 1), (71, 1), (0, 1), (74, 2), (79, 2), (78, 2), (74, 2), (76, 4),
-             (74, 1), (0, 1), (72, 1), (0, 1), (71, 2), (72, 2), (74, 4), (67, 4),
-             (67, 1), (0, 1), (71, 1), (0, 1), (74, 2), (79, 2), (81, 2), (79, 2), (78, 4),
-             (76, 2), (74, 2), (72, 2), (71, 2), (69, 2), (71, 2), (67, 4),
-             (79, 2), (83, 2), (81, 2), (79, 2), (78, 2), (76, 2), (78, 4),
-             (76, 2), (79, 2), (78, 2), (76, 2), (74, 2), (72, 2), (74, 4),
-             (71, 2), (74, 2), (79, 2), (74, 2), (76, 2), (78, 2), (79, 4),
-             (81, 2), (78, 2), (74, 2), (78, 2), (79, 8)]
+# spelet: en driv i 80-talets new wave-stil, a-moll med pulserande oktavbas och arpeggio.
+# Melodin är egen (ingen cover): Am F C G Am F G E.
+CHORDS = [(45, (69, 72, 76)), (41, (65, 69, 72)), (48, (67, 72, 76)), (43, (67, 71, 74)),
+          (45, (69, 72, 76)), (41, (65, 69, 72)), (43, (67, 71, 74)), (40, (68, 71, 76))]
+game_lead = [(76, 4), (74, 2), (72, 2), (74, 6), (0, 2),
+             (72, 2), (74, 2), (76, 4), (77, 4), (76, 4),
+             (79, 6), (76, 2), (72, 4), (74, 4),
+             (74, 8), (71, 4), (0, 4),
+             (69, 2), (72, 2), (76, 4), (81, 4), (79, 4),
+             (77, 4), (76, 2), (74, 2), (72, 8),
+             (74, 4), (76, 4), (79, 4), (74, 4),
+             (76, 12), (0, 4)]
 game_bass = []
-for root in (43, 43, 48, 50, 43, 43, 48, 50, 52, 52, 48, 50, 43, 48, 50, 43):
-    game_bass += [(root, 2), (root + 12, 2)]
-save("musik_spel", song(150, game_lead, game_bass, "k.hhs.hhk.k.s.hh", 0.125), 0.7)
+game_arp = []
+for root, tones in CHORDS:
+    game_bass += [(root, 2), (root, 2), (root + 12, 2), (root, 2)] * 2
+    game_arp += [(n + 12, 1) for n in (tones[0], tones[1], tones[2], tones[1])] * 4
+song_main = song(132, game_lead, game_bass, "k.h.s.h.k.hks.h.")
+arp = song(132, game_arp, [], ".", 0.5)
+save("musik_spel", np.tile(song_main + arp * 0.35, 2), 0.7)
+
+
+# ---------------------------------------------------------------- röst
+# Barnets replik vid rumpstuds, talsyntes (espeak-ng) som krossas till 8-bit-ljud.
+def voice(name, text, pitch=85):
+    import subprocess
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".wav") as f:
+        subprocess.run(["espeak-ng", "-v", "sv+f4", "-p", str(pitch), "-s", "150", "-m", "-w", f.name, text], check=True)
+        with wave.open(f.name) as w:
+            rate = w.getframerate()
+            raw = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16) / 32768.0
+    x = np.interp(np.arange(int(len(raw) * SR / rate)) * rate / SR, np.arange(len(raw)), raw)
+    x = np.repeat(x[::3], 3)[: len(x)]                      # lägre samplingsfrekvens
+    x = x / (np.abs(x).max() + 1e-9)
+    x = np.round(x * 15) / 15                               # 4-bitars nivåer
+    save(name, x, 0.8)
+
+
+voice("ett_trick", 'Det är <emphasis level="strong">ETT</emphasis> trick!')
