@@ -4,6 +4,7 @@ config_version=5
 
 [application]
 
+config/version="1.3.0"
 config/name="Imponerande!"
 config/description="Imponerande! – studsa på trampolinen och imponera på mamma eller pappa"
 run/main_scene="res://main.tscn"
@@ -11,6 +12,10 @@ config/features=PackedStringArray("4.5", "GL Compatibility")
 boot_splash/bg_color=Color(0.1, 0.1, 0.16, 1)
 boot_splash/show_image=false
 config/icon="res://icon.png"
+
+[autoload]
+
+UpdateChecker="*res://update_checker.gd"
 
 [display]
 
@@ -38,3 +43,8 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.1, 0.1, 0.16, 1)
+
+[update_checker]
+
+repo="martin79grahn/imponerande"
+store_url="http://192.168.0.97:8787"
