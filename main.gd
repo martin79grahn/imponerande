@@ -478,6 +478,8 @@ func _title(dt: float) -> void:
 				state = "trickbok"
 			"ljud":
 				_toggle_sound()
+			"uppd":
+				UpdateChecker.check(true, true)
 	if pressed.get("paus"):
 		_save()
 		if not OS.has_feature("web"):
@@ -510,12 +512,14 @@ func _choose() -> void:
 		play("meny")
 
 
-## Titelmenyns rader. DUELL finns när alla trick är upplåsta.
+## Titelmenyns rader. DUELL finns när alla trick är upplåsta. UPPDATERA finns inte i webbversionen.
 func menu_ids() -> Array:
 	var ids := ["spela"]
 	if all_tricks():
 		ids.append("duell")
 	ids.append_array(["bok", "ljud"])
+	if not OS.has_feature("web"):
+		ids.append("uppd")
 	return ids
 
 
@@ -993,7 +997,8 @@ func _draw_title() -> void:
 		text(title[i], Vector2(x0 + i * 18 + 1, 14 + wob + 2), Art.INK, 3, 0, false)
 		text(title[i], Vector2(x0 + i * 18, 14 + wob), GOLD.lerp(Color("#ff8a3a"), (sin(t * 3 + i) + 1) * 0.25), 3, 0, false)
 	text("ETT STUDSANDE TRAMPOLINSPEL", Vector2(160, 42), Color.WHITE, 1, 1)
-	var names := {"spela": "SPELA", "duell": "DUELL!", "bok": "TRICKBOK", "ljud": "LJUD: " + ("AV" if muted else "PÅ")}
+	var names := {"spela": "SPELA", "duell": "DUELL!", "bok": "TRICKBOK", "ljud": "LJUD: " + ("AV" if muted else "PÅ"),
+		"uppd": "SÖKER..." if UpdateChecker.busy else "UPPDATERA"}
 	var ids := menu_ids()
 	for i in ids.size():
 		var r := title_item(i)
