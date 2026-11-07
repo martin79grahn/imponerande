@@ -7,12 +7,17 @@ const Data := preload("res://data.gd")
 const Art := preload("res://art.gd")
 const Game := preload("res://game.gd")
 const SkyScript := preload("res://sky.gd")
+const Rival := preload("res://rival.gd")
 
 const W := 320.0
 const H := 180.0
-## Viewporten är dubbelt så stor som spelets koordinater, så pixlarna blir hälften så stora.
+## Bakgrunden ritas i dubbla spelkoordinater (640 x 360) så att den blir pixlig med halvstora
+## pixlar. Figurerna och texten ritas direkt i skärmens upplösning och blir släta.
 const PX := 2.0
 const SAVE := "user://save.cfg"
+const RIVAL_X := 232.0          # grannens trampolin i duellen
+const BROR_SIZE := 1.35
+const BROR_AT := Vector2(298, 158)   # storebror står på Lisas tomt, bredvid hennes studsmatta
 const GOLD := Color("#ffe14d")
 const PANEL := Color(0.06, 0.05, 0.12, 0.86)
 
@@ -23,8 +28,20 @@ var state := "titel"            # titel | val | spel | paus | resultat | trickbo
 var sel := 0                    # markerad rad i menyer
 var kid := 0
 var par := 0
-var xp := 0
+var stjarnor := 0               # föräldrarnas betyg ihop; låser upp nivåer
 var level := 1
+var duell_vinster := 0
+var duell_forluster := 0
+var film_sett := false
+var duel := false               # spelar vi duell mot grannen?
+var rival                       # grannen i duellen
+var duel_end_t := -1.0
+var film_t := 0.0
+var film_i := -1
+var result_t := 0.0
+var traffic: Array = []         # bilar och lastbilar på vägen bakom duellen
+var traffic_t := 0.0
+var final := [0, 0]             # duellens slutpoäng: [spelaren, grannen]
 var muted := false
 var game
 var sky
@@ -47,6 +64,10 @@ var wind_snd: AudioStreamPlayer
 var sfx: Array[AudioStreamPlayer] = []
 var sounds := {}
 
+# bakgrunden och vädret ritas i låg upplösning i egna lager
+var bg_layer: SubViewport
+var fg_layer: SubViewport
+
 
 func _ready() -> void:
 	font_order = FileAccess.get_file_as_string("res://assets/font_order.txt")
@@ -59,34 +80,76 @@ func _ready() -> void:
 	_play_music("musik_meny")
 	get_tree().set_auto_accept_quit(false)
 	scale = Vector2(PX, PX)
+	bg_layer = _make_layer(false, _draw_bg)
+	fg_layer = _make_layer(true, _draw_fg)
+
+
+## Ett lager i låg upplösning: en SubViewport med en nod som ritas av `painter`.
+func _make_layer(transparent: bool, painter: Callable) -> SubViewport:
+	var vp := SubViewport.new()
+	vp.transparent_bg = transparent
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vp.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
+	vp.size = Vector2i(640, 360)
+	add_child(vp)
+	var n := Node2D.new()
+	n.scale = Vector2(PX, PX)
+	n.draw.connect(painter.bind(n))
+	vp.add_child(n)
+	return vp
 
 
 # ================================================================ sparning
 func _load() -> void:
 	var cf := ConfigFile.new()
 	if cf.load(SAVE) == OK:
-		xp = cf.get_value("spel", "xp", 0)
+		if cf.has_section_key("spel", "stjarnor"):
+			stjarnor = cf.get_value("spel", "stjarnor", 0)
+		else:
+			# gamla sparfiler hade XP: börja med stjärnorna för samma nivå
+			var old: int = cf.get_value("spel", "xp", 0)
+			var l := 1
+			for i in Data.NIVA_XP.size():
+				if old >= Data.NIVA_XP[i]:
+					l = i + 1
+			stjarnor = Data.NIVA_STJARNOR[l - 1]
 		kid = clampi(cf.get_value("spel", "barn", 0), 0, 4)
 		par = clampi(cf.get_value("spel", "foralder", 0), 0, 1)
 		muted = cf.get_value("spel", "tyst", false)
-	level = level_for(xp)
+		duell_vinster = cf.get_value("duell", "vinster", 0)
+		duell_forluster = cf.get_value("duell", "forluster", 0)
+		film_sett = cf.get_value("duell", "film_sett", false)
+	level = level_for(stjarnor)
 
 
 func _save() -> void:
 	var cf := ConfigFile.new()
-	cf.set_value("spel", "xp", xp)
+	cf.set_value("spel", "stjarnor", stjarnor)
 	cf.set_value("spel", "barn", kid)
 	cf.set_value("spel", "foralder", par)
 	cf.set_value("spel", "tyst", muted)
+	cf.set_value("duell", "vinster", duell_vinster)
+	cf.set_value("duell", "forluster", duell_forluster)
+	cf.set_value("duell", "film_sett", film_sett)
 	cf.save(SAVE)
 
 
-func level_for(x: int) -> int:
+func level_for(s: int) -> int:
 	var l := 1
-	for i in Data.NIVA_XP.size():
-		if x >= Data.NIVA_XP[i]:
+	for i in Data.NIVA_STJARNOR.size():
+		if s >= Data.NIVA_STJARNOR[i]:
 			l = i + 1
 	return l
+
+
+## Alla trick upplåsta: då finns duellen.
+func all_tricks() -> bool:
+	return level >= Data.NIVA_STJARNOR.size()
+
+
+## Var spelarens trampolin står (i duellen står två bredvid varandra).
+func kid_cx() -> float:
+	return 88.0 if duel else Game.CX
 
 
 # ================================================================ ljud
@@ -110,6 +173,12 @@ func _setup_audio() -> void:
 			s.loop_begin = 0
 			s.loop_end = int(s.get_length() * s.mix_rate)
 		sounds[n] = s
+	# egen menymusik: lägg en MP3 som menymusik.mp3 i spelets användarmapp
+	if FileAccess.file_exists("user://menymusik.mp3"):
+		var own := AudioStreamMP3.load_from_file("user://menymusik.mp3")
+		if own:
+			own.loop = true
+			sounds["musik_meny"] = own
 	rain.stream = sounds.regn
 	wind_snd.stream = sounds.vind
 	rain.play()
@@ -295,7 +364,7 @@ func _touch_down(index: int, pos: Vector2) -> void:
 func _menu_tap(p: Vector2) -> void:
 	match state:
 		"titel":
-			for i in 3:
+			for i in menu_ids().size():
 				if title_item(i).has_point(p):
 					sel = i
 					tap_pulse["studs"] = true
@@ -317,7 +386,7 @@ func _menu_tap(p: Vector2) -> void:
 				tap_pulse["trick"] = true
 		"paus":
 			tap_pulse["paus"] = true
-		"resultat", "trickbok":
+		"resultat", "trickbok", "film":
 			tap_pulse["studs"] = true
 
 
@@ -326,7 +395,7 @@ func _physics_process(dt: float) -> void:
 	t += dt
 	ox = (vsize().x - W) / 2.0
 	_read_input()
-	var time_speed := 0.35 if state != "spel" else 0.05
+	var time_speed := 0.35 if state != "spel" and state != "film" else 0.05
 	if state != "paus":
 		sky.update(dt, time_speed)
 	for e in sky.events:
@@ -343,18 +412,36 @@ func _physics_process(dt: float) -> void:
 				state = "spel"
 			elif pressed.get("trick"):
 				_to_title()
+		"film": _film(dt)
 		"resultat":
-			if pressed.get("studs") or pressed.get("paus"):
-				_to_title()
+			result_t += dt
+			if result_t < 0.8:
+				pass            # så att ett STUDS-tryck från spelet inte hoppar förbi resultatet
+			elif result.get("duel"):
+				if pressed.get("studs"):
+					_start_duel()
+				elif pressed.get("trick") or pressed.get("paus"):
+					_to_title()
+			elif pressed.get("studs") or pressed.get("paus"):
+				if result.get("unlock"):
+					_start_film()
+				else:
+					_to_title()
 		"trickbok":
 			if pressed.get("studs") or pressed.get("paus") or pressed.get("trick"):
 				state = "titel"
 				play("meny")
+	var size := Vector2i((vsize() * PX).round())
+	for vp in [bg_layer, fg_layer]:
+		if vp.size != size:
+			vp.size = size
+		vp.get_child(0).queue_redraw()
 	queue_redraw()
 
 
 func _to_title() -> void:
 	state = "titel"
+	duel = false
 	sel = 0
 	sky.setup(randf_range(5.0, 20.0), ["sol", "sol", "moln"].pick_random())
 	_play_music("musik_meny")
@@ -368,21 +455,28 @@ func _title(dt: float) -> void:
 		demo_y = 0.0
 		demo_v = sqrt(2.0 * Game.G * randf_range(30, 70))
 		demo_pose = ["upp", "stjarna", "boll", "upp"].pick_random()
+	var ids := menu_ids()
+	sel = mini(sel, ids.size() - 1)
 	if pressed.get("upp"):
-		sel = posmod(sel - 1, 3)
+		sel = posmod(sel - 1, ids.size())
 		play("meny")
 	if pressed.get("ned"):
-		sel = posmod(sel + 1, 3)
+		sel = posmod(sel + 1, ids.size())
 		play("meny")
 	if pressed.get("studs"):
 		play("valj")
-		match sel:
-			0:
+		match ids[sel]:
+			"spela":
 				state = "val"
 				sel = 0
-			1:
+			"duell":
+				if film_sett:
+					_start_duel()
+				else:
+					_start_film()
+			"bok":
 				state = "trickbok"
-			2:
+			"ljud":
 				_toggle_sound()
 	if pressed.get("paus"):
 		_save()
@@ -416,7 +510,17 @@ func _choose() -> void:
 		play("meny")
 
 
+## Titelmenyns rader. DUELL finns när alla trick är upplåsta.
+func menu_ids() -> Array:
+	var ids := ["spela"]
+	if all_tricks():
+		ids.append("duell")
+	ids.append_array(["bok", "ljud"])
+	return ids
+
+
 func _start_game() -> void:
+	duel = false
 	play("valj")
 	_save()
 	var w: String = Data.VADER.pick_random()
@@ -445,14 +549,36 @@ func _play(dt: float) -> void:
 	for s in game.sounds:
 		play(s)
 	game.sounds.clear()
+	if duel:
+		_update_traffic(dt)
+		rival.update(dt)
+		for s in rival.sounds:
+			play(s)
+		rival.sounds.clear()
+		if duel_end_t < 0.0 and (game.poang >= Data.DUELL_MAL or rival.score >= Data.DUELL_MAL):
+			duel_end_t = 1.6
+			final = [game.poang, rival.score]        # poängen fryses när någon nått målet
+		elif duel_end_t >= 0.0:
+			duel_end_t -= dt
+			if duel_end_t < 0.0:
+				_finish_duel()
+		return
 	if game.phase == "slut":
 		_finish()
 
 
 func _finish() -> void:
 	var before := level
-	xp += game.total
-	level = level_for(xp)
+	# föräldern sätter betyg på rundan: snittet av de åtta bästa lapparna, 0..10 stjärnor
+	var best: Array = game.cards.duplicate()
+	best.sort()
+	best.reverse()
+	var sum := 0
+	for i in mini(8, best.size()):
+		sum += best[i]
+	var betyg := int(round(sum / 8.0))
+	stjarnor += betyg
+	level = level_for(stjarnor)
 	var news: Array = []
 	for id in Data.BOK:
 		var n: int = Data.TRICKS[id].niva
@@ -464,24 +590,132 @@ func _finish() -> void:
 		if avg >= o[0]:
 			verdict = o[1]
 	result = {"total": game.total, "avg": avg, "verdict": verdict, "cards": game.cards.size(), "best": game.best_jump,
-		"news": news, "levelup": level > before}
+		"news": news, "levelup": level > before, "betyg": betyg,
+		"unlock": all_tricks() and before < Data.NIVA_STJARNOR.size()}
 	if level > before:
 		play("niva")
 	else:
 		play("applad")
 	_save()
+	result_t = 0.0
+	state = "resultat"
+
+
+# ================================================================ duellen
+## Filmen: grannen blir sur över allt beröm och utmanar till duell.
+func _start_film() -> void:
+	state = "film"
+	film_t = 0.0
+	film_i = -1
+	duel = false
+	sky.setup(17.0, "sol")
+	play("applad")
+
+
+func _film(dt: float) -> void:
+	film_t += dt
+	# barnet studsar tills grannen kommer
+	if demo_y > 0.0 or film_t < 5.6:
+		demo_v -= Game.G * dt
+		demo_y += demo_v * dt
+		if demo_y <= 0.0:
+			demo_y = 0.0
+			demo_v = sqrt(2.0 * Game.G * randf_range(40, 70)) if film_t < 5.6 else 0.0
+			demo_pose = ["upp", "stjarna", "boll"].pick_random()
+	if pressed.get("studs"):
+		for l in Data.FILM:
+			if l[0] > film_t:
+				film_t = l[0]
+				break
+	var i := 0
+	for k in Data.FILM.size():
+		if film_t >= Data.FILM[k][0]:
+			i = k
+	if i != film_i:
+		film_i = i
+		var who: String = Data.FILM[i][1]
+		if Data.FILM[i][2] == "FNYS!":
+			play("lapp")
+		elif who != "":
+			play("meny")
+	if pressed.get("trick") or pressed.get("paus") or film_t >= Data.FILM[-1][0]:
+		film_sett = true
+		_start_duel()
+
+
+func _start_duel() -> void:
+	play("valj")
+	duel = true
+	sky.setup(randf_range(8.0, 19.0), ["sol", "sol", "moln", "regn", "storm"].pick_random())
+	game = Game.new()
+	game.duel = true
+	game.start(kid, par, level, sky.weather)
+	game._say("")
+	rival = Rival.new()
+	traffic.clear()
+	for i in 4:
+		traffic_t = 0.0
+		_update_traffic(0.0)
+		traffic[-1].x = randf_range(0, W)
+	rival.skill = mini(duell_vinster, 4) * 0.5
+	duel_end_t = -1.0
+	_save()
+	state = "spel"
+	_play_music("musik_spel")
+
+
+## Trafiken på vägen: mest bilar, ibland en lastbil, åt båda hållen.
+func _update_traffic(dt: float) -> void:
+	traffic_t -= dt
+	if traffic_t <= 0.0:
+		traffic_t = randf_range(0.8, 3.0)
+		var dir := 1.0 if randf() < 0.5 else -1.0
+		var truck := randf() < 0.2
+		var cols := [Color("#d84a3a"), Color("#3a6ad8"), Color("#f2f2f2"), Color("#2a2a30"), Color("#e8c43a"), Color("#4aa86a"), Color("#9aa0a8")]
+		traffic.append({"x": -ox - 30.0 if dir > 0 else W + ox + 30.0, "dir": dir, "typ": "lastbil" if truck else "bil",
+			"col": Color("#f0f0f0") if truck and randf() < 0.5 else cols.pick_random(),
+			"speed": randf_range(20, 28) if truck else randf_range(30, 46)})
+	for v in traffic:
+		v.x += v.dir * v.speed * dt
+	# en bil ska inte köra igenom bilen framför i samma fil
+	for v in traffic:
+		for w in traffic:
+			var gap: float = (w.x - v.x) * v.dir
+			if w != v and w.dir == v.dir and gap > 0.0 and gap < 26.0:
+				v.x = w.x - v.dir * 26.0
+				v.speed = minf(v.speed, w.speed)
+	traffic = traffic.filter(func(v): return v.x > -ox - 60.0 and v.x < W + ox + 60.0)
+
+
+func _finish_duel() -> void:
+	var won: bool = final[0] >= final[1]
+	if won:
+		duell_vinster += 1
+	else:
+		duell_forluster += 1
+	result = {"duel": true, "won": won, "me": final[0], "her": final[1]}
+	play("niva" if won else "oj")
+	_save()
+	result_t = 0.0
 	state = "resultat"
 
 
 # ================================================================ ritning
 func _draw() -> void:
 	var vw := vsize().x
+	var whole := Rect2(Vector2.ZERO, vsize())
+	draw_texture_rect(bg_layer.get_texture(), whole, false)
 	draw_set_transform(Vector2(ox, 0))
-	_scene()
+	_figures()
+	draw_set_transform(Vector2.ZERO)
+	draw_texture_rect(fg_layer.get_texture(), whole, false)
+	draw_set_transform(Vector2(ox, 0))
+	_shade()
 	match state:
 		"titel": _draw_title()
 		"val": _draw_choose()
 		"spel", "paus": _draw_hud()
+		"film": _draw_film()
 		"resultat": _draw_result()
 		"trickbok": _draw_book()
 	if state == "paus":
@@ -494,40 +728,155 @@ func _draw() -> void:
 		_draw_touch()
 
 
-## Himlen, trädgården, trampolinen, föräldern och barnet, med väder och kvällsmörker.
-func _scene() -> void:
-	draw_rect(Rect2(-ox, 0, vsize().x, H), Color("#1a1a2a"))
-	sky.draw_back(self)
+func _playing() -> bool:
+	return state in ["spel", "paus", "resultat"] and game != null
+
+
+## Barnets höjd över duken och hur mycket duken trycks ned: [ky, dip].
+func _bounce() -> Array:
+	if _playing():
+		return [game.y, game.dip]
+	if state == "titel" or state == "film":
+		return [demo_y, maxf(0.0, 6.0 - demo_y) if demo_y < 6.0 else 0.0]
+	return [0.0, 0.0]
+
+
+## Pixliga bakgrunden: himlen, trädgården och trampolinerna.
+func _draw_bg(c: Node2D) -> void:
+	c.draw_set_transform(Vector2(ox, 0))
+	c.draw_rect(Rect2(-ox, 0, vsize().x, H), Color("#1a1a2a"))
+	sky.draw_back(c)
+	if _playing() and duel:
+		Art.duel_back(c, sky.wind, t, sky.night(), traffic)
+	else:
+		Art.garden_back(c, sky.wind, t, sky.night())
+	Art.ground(c)
+	var dip: float = _bounce()[1]
+	Art.trampoline(c, kid_cx(), Game.MAT_Y, dip, 0.0)
+	if _playing() and duel:
+		Art.trampoline(c, RIVAL_X, Game.MAT_Y, rival.dip, 0.0, Color("#ff6ab4"))
+		Art.side_fence(c, 160)
+
+
+## Pixligt väder framför figurerna: regn, snö och blixtar.
+func _draw_fg(c: Node2D) -> void:
+	c.draw_set_transform(Vector2(ox, 0))
+	sky.draw_front(c)
+
+
+## Kvällsmörker och molnighet över allt, och lampor i fönstren.
+func _shade() -> void:
 	var nt: float = sky.night()
-	Art.garden_back(self, sky.wind, t, nt)
-	Art.ground(self)
-	var playing: bool = state in ["spel", "paus", "resultat"] and game != null
+	var dark := clampf(nt * 0.42 + sky.gloom() * 0.15, 0.0, 0.55)
+	if dark > 0.0:
+		draw_rect(Rect2(-ox, 0, vsize().x, H), Color(0.04, 0.04, 0.16, dark))
+	if not (_playing() and duel):
+		Art.lights(self, nt)
+
+
+## Figurerna i full upplösning: föräldern, barnet, grannen och storebror.
+func _figures() -> void:
+	var playing := _playing()
 	var k: Dictionary = Data.KIDS[kid]
-	var dip := 0.0
-	var ky := 0.0
-	if playing:
-		dip = game.dip
-		ky = game.y
-	elif state == "titel":
-		ky = demo_y
-		dip = maxf(0.0, 6.0 - demo_y) if demo_y < 6.0 else 0.0
-	Art.trampoline(self, Game.CX, Game.MAT_Y, dip, 0.0)
-	var feet := Vector2(Game.CX, Game.MAT_Y - ky + dip)
-	if state in ["spel", "paus", "resultat"] and game:
+	var b := _bounce()
+	var feet := Vector2(kid_cx(), Game.MAT_Y - b[0] + b[1])
+	if playing and not duel:
 		var pstate: String = game.react
 		var card_at: Vector2 = Art.parent(self, Vector2(ox, 0), Data.PARENTS[par], Vector2(268, 150), pstate, feet + Vector2(0, -20), t, sky.wind)
 		_draw_kid_in_game(k, feet)
 		if game.card_t > 0.0 and card_at != Vector2.ZERO:
 			_draw_card(card_at, game.card)
+	elif playing:
+		_duel_scene()
+		_draw_kid_in_game(k, feet)
 	elif state == "titel":
 		var face := "oo" if demo_v < 0 else "glad"
 		Art.kid(self, Vector2(ox, 0), k, feet, demo_pose if demo_y > 4 else "huka", 0.0, 1.0, sky.wind, -demo_v / 300.0, t, face)
-	sky.draw_front(self)
-	# mörker, molnighet och lampor
-	var dark := clampf(nt * 0.42 + sky.gloom() * 0.15, 0.0, 0.55)
-	if dark > 0.0:
-		draw_rect(Rect2(-ox, 0, vsize().x, H), Color(0.04, 0.04, 0.16, dark))
-	Art.lights(self, nt)
+	elif state == "film":
+		_film_scene(k, feet)
+
+
+## Storebror som dömer och grannen som studsar (trampolinerna och staketet finns i bakgrunden).
+func _duel_scene() -> void:
+	var bpose := "armkors"
+	if game.card_t > 0.0 and rival.card_t > 0.0:
+		bpose = "kortB"
+	elif game.card_t > 0.0:
+		bpose = "kortV"
+	elif rival.card_t > 0.0:
+		bpose = "kortH"
+	var face := "glad" if game.card_t > 0.0 and game.card >= 9 else "rak"
+	Art.kid(self, Vector2(ox, 0), Data.BROR, BROR_AT, bpose, 0.0, 1.0, sky.wind, 0.0, t, face, BROR_SIZE)
+	if game.card_t > 0.0:
+		_draw_card(BROR_AT + Vector2(-12, -37) * BROR_SIZE, game.card)
+	if rival.card_t > 0.0:
+		_draw_card(BROR_AT + Vector2(12, -37) * BROR_SIZE, rival.card)
+	var rface := "oo" if rival.phase == "luft" and rival.hojd >= 3 else "flin"
+	Art.kid(self, Vector2(ox, 0), Data.GRANNE, Vector2(RIVAL_X, Game.MAT_Y - rival.y + rival.dip), rival.pose, rival.rot, rival.sx,
+		sky.wind, clampf(-rival.vy / 200.0, -1.0, 1.0), t, rface)
+
+
+## Filmen: barnet studsar, föräldern jublar, grannen kommer in och fnyser, sen storebror.
+func _film_scene(k: Dictionary, feet: Vector2) -> void:
+	var pstate := "klappar" if film_t < 4.4 else ("gapar" if film_t > 9.8 and film_t < 12.0 else "tittar")
+	Art.parent(self, Vector2(ox, 0), Data.PARENTS[par], Vector2(268, 150), pstate, feet + Vector2(0, -20), t, sky.wind)
+	var kface := "glad" if film_t < 8.4 else "oo"
+	var kpose := "sta" if film_t >= 6.0 and demo_y <= 0.0 else (demo_pose if demo_y > 4 else "huka")
+	Art.kid(self, Vector2(ox, 0), k, feet, kpose, 0.0, 1.0, sky.wind, -demo_v / 300.0 if demo_y > 0.0 else 0.0, t, kface)
+	# grannen går in från vänster och ställer sig vid trampolinen
+	if film_t >= 4.4:
+		var gx := lerpf(-ox - 20.0, 92.0, clampf((film_t - 4.4) / 3.0, 0, 1))
+		var walking := film_t < 7.4
+		var gpose := ("ga1" if fmod(t, 0.3) < 0.15 else "ga2") if walking else ("armkors" if film_t < 8.4 or film_t > 12.8 else "sta")
+		if film_t >= 12.8 and film_t < 15.6:
+			gpose = "upp"           # pekar ut utmaningen
+		var gface := "fnys" if film_t >= 8.4 and film_t < 9.8 else ("flin" if film_t >= 9.8 else "arg")
+		var gfeet := Vector2(gx, 152 - (absf(sin(t * 10.0)) * 1.5 if walking else 0.0))
+		Art.kid(self, Vector2(ox, 0), Data.GRANNE, gfeet, gpose, 0.0, 1.0, sky.wind, 0.0, t, gface)
+		if gface == "fnys":
+			# fnysningen: två små moln från näsan
+			var puff := fmod(film_t - 8.4, 0.7) / 0.7
+			for s in [-1.0, 1.0]:
+				draw_circle(gfeet + Vector2(s * (3 + puff * 8), -23 + puff * 2), 1.5 + puff * 2, Color(1, 1, 1, 1.0 - puff))
+	# storebror kommer släntrande
+	if film_t >= 17.0:
+		var bx := lerpf(-ox - 24.0, 52.0, clampf((film_t - 17.0) / 2.4, 0, 1))
+		var bwalk := film_t < 19.4
+		var bpose := ("ga1" if fmod(t, 0.4) < 0.2 else "ga2") if bwalk else "armkors"
+		Art.kid(self, Vector2(ox, 0), Data.BROR, Vector2(bx, 154), bpose, 0.0, 1.0, sky.wind, 0.0, t, "rak", BROR_SIZE)
+
+
+## Var en figurs mun ungefär sitter i filmen (för pratbubblans svans).
+func _film_mouth(who: String) -> Vector2:
+	match who:
+		"foralder": return Vector2(266, 112)
+		"granne": return Vector2(92, 132)
+		"bror": return Vector2(52, 124)
+	return Vector2(160, 120)
+
+
+func _draw_film() -> void:
+	draw_rect(Rect2(-ox, 0, vsize().x, 14), Color.BLACK)
+	draw_rect(Rect2(-ox, H - 14, vsize().x, 14), Color.BLACK)
+	var l: Array = Data.FILM[maxi(film_i, 0)]
+	if l[2] != "":
+		say_bubble(l[2], _film_mouth(l[1]))
+	text("STUDS: NÄSTA   TRICK: HOPPA ÖVER", Vector2(160, H - 11), Color(1, 1, 1, 0.6), 1, 1, false)
+
+
+## En pratbubbla ovanför en mun. "|" i texten ger en ny rad.
+## top: bubblans överkant (annars precis ovanför munnen).
+func say_bubble(s: String, mouth: Vector2, top := -1.0) -> void:
+	var lines := s.split("|")
+	var w := 0
+	for l in lines:
+		w = maxi(w, l.length() * 6 + 8)
+	var h := lines.size() * 9 + 4
+	var x := clampf(mouth.x - w + 18, 2 - ox, W + ox - w - 2)
+	var r := Rect2(x, mouth.y - 20 - h if top < 0.0 else top, w, h)
+	Art.bubble(self, r, mouth + Vector2(0, -4))
+	for i in lines.size():
+		text(lines[i], r.position + Vector2(4, 3 + i * 9), Art.INK, 1, 0, false)
 
 
 func _draw_kid_in_game(k: Dictionary, feet: Vector2) -> void:
@@ -566,47 +915,74 @@ func _draw_card(at: Vector2, n: int) -> void:
 
 func _draw_hud() -> void:
 	var g = game
-	panel(Rect2(2, 2, 74, 22))
-	text("TID %d" % ceili(g.time_left), Vector2(6, 5), Color.WHITE if g.time_left > 10 else Color("#ff6a5a"))
-	text("POÄNG %d" % g.total, Vector2(6, 14), GOLD)
-	panel(Rect2(244, 2, 74, 22))
-	text("NIVÅ %d" % level, Vector2(248, 5))
-	var lo: int = Data.NIVA_XP[level - 1]
-	var hi: int = Data.NIVA_XP[mini(level, Data.NIVA_XP.size() - 1)]
-	var frac := 1.0 if level >= Data.NIVA_XP.size() else clampf(float(xp - lo) / (hi - lo), 0, 1)
-	draw_rect(Rect2(248, 15, 66, 5), Color(1, 1, 1, 0.2))
-	draw_rect(Rect2(248, 15, 66 * frac, 5), Color("#5ad86a"))
-	# hur mycket föräldern tittar
-	var parent_name: String = Data.PARENTS[par].namn
-	text(parent_name, Vector2(268, 156), Color.WHITE, 1, 1)
-	for i in 5:
-		var on: bool = g.attention > i * 0.2 + 0.05
-		text("~", Vector2(254 + i * 6, 166), Color("#ff4a6a") if on else Color(1, 1, 1, 0.25), 1, 0, false)
+	var cx := kid_cx()
+	if duel:
+		var over := duel_end_t >= 0.0
+		_score_panel(Rect2(2, 2, 116, 22), Data.KIDS[kid].namn, final[0] if over else g.poang, Color("#5ad86a"))
+		_score_panel(Rect2(202, 2, 116, 22), Data.GRANNE.namn, final[1] if over else rival.score, Color("#ff6ab4"))
+		if g.line_t > 0.0 and g.line != "":
+			say_bubble(g.line, BROR_AT + Vector2(0, -30 * BROR_SIZE), 48)
+		if rival.line_t > 0.0:
+			say_bubble(rival.line, Vector2(RIVAL_X + 20, Game.MAT_Y - rival.y - 22))
+		for p in rival.popups:
+			var a := clampf(1.4 - p.t, 0, 1)
+			text(p.text, Vector2(RIVAL_X, Game.MAT_Y - rival.y - 44 - p.t * 14 - p.n % 3 * 9), Color(p.col, a), 1, 1)
+		if duel_end_t >= 0.0:
+			var won: bool = final[0] >= final[1]
+			text("DU VANN!" if won else Data.GRANNE.namn + " VANN!", Vector2(160, 30), GOLD if won else Color("#ff6ab4"), 2, 1)
+	else:
+		panel(Rect2(2, 2, 74, 22))
+		text("TID %d" % ceili(g.time_left), Vector2(6, 5), Color.WHITE if g.time_left > 10 else Color("#ff6a5a"))
+		text("POÄNG %d" % g.total, Vector2(6, 14), GOLD)
+		panel(Rect2(244, 2, 74, 22))
+		text("NIVÅ %d" % level, Vector2(248, 5))
+		var lo: int = Data.NIVA_STJARNOR[level - 1]
+		var hi: int = Data.NIVA_STJARNOR[mini(level, Data.NIVA_STJARNOR.size() - 1)]
+		var frac := 1.0 if all_tricks() else clampf(float(stjarnor - lo) / (hi - lo), 0, 1)
+		draw_rect(Rect2(248, 15, 66, 5), Color(1, 1, 1, 0.2))
+		draw_rect(Rect2(248, 15, 66 * frac, 5), GOLD)
+		# hur mycket föräldern tittar
+		var parent_name: String = Data.PARENTS[par].namn
+		text(parent_name, Vector2(268, 156), Color.WHITE, 1, 1)
+		for i in 5:
+			var on: bool = g.attention > i * 0.2 + 0.05
+			text("~", Vector2(254 + i * 6, 166), Color("#ff4a6a") if on else Color(1, 1, 1, 0.25), 1, 0, false)
+		if g.line_t > 0.0 and g.line != "":
+			var w: int = g.line.length() * 6 + 8
+			var r2 := Rect2(clampf(246 - w, 4 - ox, 300), 60, w, 13)
+			Art.bubble(self, r2, Vector2(258, 96))
+			text(g.line, r2.position + Vector2(4, 3), Art.INK, 1, 0, false)
 	if g.phase == "sta":
 		var hint: String = Data.KIDS[kid].halsning
-		var r := Rect2(118, 70, hint.length() * 6 + 8, 13)
-		Art.bubble(self, r, Vector2(150, 104))
+		var r := Rect2(maxf(cx - 32, 2 - ox), 70, hint.length() * 6 + 8, 13)
+		Art.bubble(self, r, Vector2(cx, 104))
 		text(hint, r.position + Vector2(4, 3), Art.INK, 1, 0, false)
-		text("TRYCK STUDS I TAKT MED HOPPEN!", Vector2(160, 30), GOLD, 1, 1)
+		if duel:
+			text("FÖRST TILL %d POÄNG VINNER!" % Data.DUELL_MAL, Vector2(160, 30), GOLD, 1, 1)
+		else:
+			text("TRYCK STUDS I TAKT MED HOPPEN!", Vector2(160, 30), GOLD, 1, 1)
 		text("RIKTNING + TRICK I LUFTEN", Vector2(160, 40), Color.WHITE, 1, 1)
-	if g.line_t > 0.0 and g.line != "":
-		var w: int = g.line.length() * 6 + 8
-		var r2 := Rect2(clampf(246 - w, 4 - ox, 300), 60, w, 13)
-		Art.bubble(self, r2, Vector2(258, 96))
-		text(g.line, r2.position + Vector2(4, 3), Art.INK, 1, 0, false)
 	if g.kid_line_t > 0.0:
 		var kw: int = g.kid_line.length() * 6 + 8
-		var kr := Rect2(Game.CX - 36 - kw, 92, kw, 13)
-		Art.bubble(self, kr, Vector2(Game.CX - 8, 116))
+		var kr := Rect2(maxf(cx - 36 - kw, 2 - ox), 92, kw, 13)
+		Art.bubble(self, kr, Vector2(cx - 8, 116))
 		text(g.kid_line, kr.position + Vector2(4, 3), Art.INK, 1, 0, false)
 	if g.perfect_t > 0.0:
-		text("PERFEKT!", Vector2(Game.CX, Game.MAT_Y + 14), Color("#7aff8a"), 1, 1)
+		text("PERFEKT!", Vector2(cx, Game.MAT_Y + 14), Color("#7aff8a"), 1, 1)
 	for p in g.popups:
 		var a := clampf(1.4 - p.t, 0, 1)
 		var y: float = Game.MAT_Y - g.y - 44 - p.t * 14 - p.n % 3 * 9
-		text(p.text, Vector2(Game.CX, y), Color(p.col, a), 1, 1)
+		text(p.text, Vector2(cx, y), Color(p.col, a), 1, 1)
 	if g.time_left <= 0.0 and g.phase != "slut":
 		text("TIDEN ÄR UTE!", Vector2(160, 50), GOLD, 2, 1)
+
+
+## Poängen i duellen: namn, poäng av 50 och en stapel.
+func _score_panel(r: Rect2, name: String, score: int, col: Color) -> void:
+	panel(r)
+	text("%s %d/%d" % [name, mini(score, Data.DUELL_MAL), Data.DUELL_MAL], r.position + Vector2(4, 3), Color.WHITE)
+	draw_rect(Rect2(r.position + Vector2(4, 13), Vector2(r.size.x - 8, 5)), Color(1, 1, 1, 0.2))
+	draw_rect(Rect2(r.position + Vector2(4, 13), Vector2((r.size.x - 8) * minf(1.0, float(score) / Data.DUELL_MAL), 5)), col)
 
 
 func _draw_title() -> void:
@@ -617,17 +993,19 @@ func _draw_title() -> void:
 		text(title[i], Vector2(x0 + i * 18 + 1, 14 + wob + 2), Art.INK, 3, 0, false)
 		text(title[i], Vector2(x0 + i * 18, 14 + wob), GOLD.lerp(Color("#ff8a3a"), (sin(t * 3 + i) + 1) * 0.25), 3, 0, false)
 	text("ETT STUDSANDE TRAMPOLINSPEL", Vector2(160, 42), Color.WHITE, 1, 1)
-	var items := ["SPELA", "TRICKBOK", "LJUD: " + ("AV" if muted else "PÅ")]
-	for i in 3:
+	var names := {"spela": "SPELA", "duell": "DUELL!", "bok": "TRICKBOK", "ljud": "LJUD: " + ("AV" if muted else "PÅ")}
+	var ids := menu_ids()
+	for i in ids.size():
 		var r := title_item(i)
 		panel(r, sel == i)
-		text(items[i], r.get_center() + Vector2(0, -3), GOLD if sel == i else Color.WHITE, 1, 1)
+		var col := Color("#ff8ac8") if ids[i] == "duell" else Color.WHITE
+		text(names[ids[i]], r.get_center() + Vector2(0, -3), GOLD if sel == i else col, 1, 1)
 	panel(Rect2(4, 160, 92, 16))
-	text("NIVÅ %d  XP %d" % [level, xp], Vector2(8, 165), Color.WHITE)
+	text("NIVÅ %d  * %d" % [level, stjarnor], Vector2(8, 165), Color.WHITE)
 
 
 func title_item(i: int) -> Rect2:
-	return Rect2(196, 62 + i * 20, 84, 16)
+	return Rect2(196, 58 + i * 19, 84, 16)
 
 
 func kid_x(i: int) -> float:
@@ -670,21 +1048,42 @@ func _draw_choose() -> void:
 func _draw_result() -> void:
 	draw_rect(Rect2(-ox, 0, vsize().x, H), Color(0, 0, 0, 0.5))
 	panel(Rect2(40, 14, 240, 150))
+	if result.get("duel"):
+		_draw_duel_result()
+		return
 	text("RUNDAN ÄR SLUT!", Vector2(160, 22), GOLD, 2, 1)
 	text(Data.PARENTS[par].namn + " SÄGER:", Vector2(160, 44), Color.WHITE, 1, 1)
 	text(result.verdict, Vector2(160, 56), Color("#7aff8a"), 1, 1)
 	text("POÄNG: %d" % result.total, Vector2(60, 74))
 	text("SNITT PÅ LAPPARNA: %.1f" % result.avg, Vector2(60, 84))
 	text("BÄSTA HOPP: %d" % result.best, Vector2(60, 94))
-	text("XP: +%d  (NIVÅ %d)" % [result.total, level], Vector2(60, 104), GOLD)
+	text("BETYG %d/10: +%d *  (TOTALT %d)" % [result.betyg, result.betyg, stjarnor], Vector2(60, 104), GOLD)
 	var y := 118.0
-	if result.levelup:
+	if result.unlock:
+		text("ALLA TRICK! NYTT LÄGE: DUELL!", Vector2(160, y), Color("#ff8ac8"), 1, 1)
+		y += 10
+	elif result.levelup:
 		text("NY NIVÅ!", Vector2(160, y), Color("#ff8a3a"), 1, 1)
+		y += 10
+	elif not all_tricks():
+		text("NÄSTA TRICK VID %d *" % Data.NIVA_STJARNOR[level], Vector2(160, y), Color(1, 1, 1, 0.7), 1, 1)
 		y += 10
 	for n in result.news:
 		text("NYTT TRICK: " + n, Vector2(160, y), Color("#a8e8ff"), 1, 1)
 		y += 9
 	text("TRYCK STUDS", Vector2(160, 154), Color(1, 1, 1, 0.5 + 0.5 * sin(t * 5)), 1, 1)
+
+
+func _draw_duel_result() -> void:
+	var won: bool = result.won
+	text("DU VANN!" if won else Data.GRANNE.namn + " VANN!", Vector2(160, 22), GOLD if won else Color("#ff6ab4"), 2, 1)
+	text("STOREBROR SÄGER:", Vector2(160, 44), Color.WHITE, 1, 1)
+	text("OKEJ, DU ÄR BÄST. DEN HÄR GÅNGEN." if won else "SORRY, MIN SYRRA ÄR BÄST.", Vector2(160, 56), Color("#7aff8a"), 1, 1)
+	text("%s: %d POÄNG" % [Data.KIDS[kid].namn, result.me], Vector2(60, 76))
+	text("%s: %d POÄNG" % [Data.GRANNE.namn, result.her], Vector2(60, 86))
+	text("VINSTER %d  FÖRLUSTER %d" % [duell_vinster, duell_forluster], Vector2(60, 100), GOLD)
+	text("LISA: " + ("NÄSTA GÅNG SÅ!" if won else "HAH! VAD VAR DET JAG SA?"), Vector2(160, 118), Color("#ff8ac8"), 1, 1)
+	text("STUDS: REVANSCH   TRICK: MENYN", Vector2(160, 154), Color(1, 1, 1, 0.5 + 0.5 * sin(t * 5)), 1, 1)
 
 
 func _draw_book() -> void:
@@ -698,7 +1097,7 @@ func _draw_book() -> void:
 		var open: bool = tr.niva <= level
 		var c := Color.WHITE if open else Color(1, 1, 1, 0.4)
 		text(tr.namn if open else "???", Vector2(6, y), GOLD if open else c)
-		text(tr.kombo if open else "LÅSES UPP PÅ NIVÅ %d" % tr.niva, Vector2(104, y), c)
+		text(tr.kombo if open else "LÅSES UPP VID %d *" % Data.NIVA_STJARNOR[tr.niva - 1], Vector2(116, y), c)
 		text(str(tr.poang), Vector2(314, y), c, 1, 2)
 
 

@@ -1,7 +1,8 @@
 extends RefCounted
 ## Ritfunktioner i "pappersfigur"-stil: platta färger, svarta konturer, runda huvuden med stora
-## ögon och vantar till händer. Allt ritas i spelets låga upplösning (320 x 180), så det blir
-## pixligt av sig självt. `off` är skärmens förskjutning (bredare skärmar har kanter).
+## ögon och vantar till händer. Bakgrunden ritas i låg upplösning så att den blir pixlig, medan
+## figurerna ritas i skärmens fulla upplösning och blir släta. `off` är skärmens förskjutning
+## (bredare skärmar har kanter).
 
 const INK := Color("#141018")
 
@@ -16,11 +17,17 @@ const POSES := {
 	"kna": {"hands": [Vector2(-9, -2), Vector2(9, -2)], "feet": [Vector2(-3, 6), Vector2(3, 6)], "y": 4.0},
 	"ligg": {"hands": [Vector2(-9, -6), Vector2(9, -6)], "feet": [Vector2(-3, 11), Vector2(3, 11)], "y": 0.0},
 	"superman": {"hands": [Vector2(-4, -15), Vector2(4, -15)], "feet": [Vector2(-2, 12), Vector2(2, 12)], "y": 0.0},
+	"ga1": {"hands": [Vector2(-7, 5), Vector2(8, 1)], "feet": [Vector2(-6, 11), Vector2(4, 10)], "y": 0.0},
+	"ga2": {"hands": [Vector2(-8, 1), Vector2(7, 5)], "feet": [Vector2(-4, 10), Vector2(6, 11)], "y": 0.0},
+	"kortV": {"hands": [Vector2(-9, -15), Vector2(8, 3)], "feet": [Vector2(-3, 11), Vector2(3, 11)], "y": 0.0},
+	"kortH": {"hands": [Vector2(-8, 3), Vector2(9, -15)], "feet": [Vector2(-3, 11), Vector2(3, 11)], "y": 0.0},
+	"kortB": {"hands": [Vector2(-9, -15), Vector2(9, -15)], "feet": [Vector2(-3, 11), Vector2(3, 11)], "y": 0.0},
+	"armkors": {"hands": [Vector2(4, -1), Vector2(-4, -1)], "feet": [Vector2(-4, 11), Vector2(4, 11)], "y": 0.0},
 	"krasch": {"hands": [Vector2(-11, 2), Vector2(10, -6)], "feet": [Vector2(-8, 9), Vector2(6, 11)], "y": 0.0},
 }
 
 
-static func ellipse(c: CanvasItem, ctr: Vector2, rx: float, ry: float, col: Color, seg := 14) -> void:
+static func ellipse(c: CanvasItem, ctr: Vector2, rx: float, ry: float, col: Color, seg := 28) -> void:
 	var pts := PackedVector2Array()
 	for i in seg:
 		var a := TAU * i / seg
@@ -42,15 +49,16 @@ static func limb(c: CanvasItem, a: Vector2, b: Vector2, col: Color, w := 3.0) ->
 # ================================================================ barnet
 ## pos: var fötterna står (på duken). rot: rotation i luften. sx: -1..1 när barnet snurrar
 ## (negativt = ryggen mot oss). wind: vinden, lift: hur fort barnet faller (håret flyger upp).
+## size: storleken (storebror är större).
 static func kid(c: CanvasItem, off: Vector2, k: Dictionary, pos: Vector2, pose: String, rot: float, sx: float,
-		wind: float, lift: float, t: float, face := "glad") -> void:
+		wind: float, lift: float, t: float, face := "glad", size := 1.0) -> void:
 	var p: Dictionary = POSES.get(pose, POSES.sta)
-	var hip := pos + Vector2(0, -11 + p.y)
+	var hip := pos + Vector2(0, -11 + p.y) * size
 	var sy := 1.0
 	if pose == "ligg" or pose == "superman":
 		pass
 	var back := sx < 0.0
-	c.draw_set_transform(off + hip, rot, Vector2(maxf(absf(sx), 0.15), sy))
+	c.draw_set_transform(off + hip, rot, Vector2(maxf(absf(sx), 0.15), sy) * size)
 	var hands: Array = p.hands
 	var feet: Array = p.feet
 	if pose == "krasch":
@@ -65,7 +73,7 @@ static func kid(c: CanvasItem, off: Vector2, k: Dictionary, pos: Vector2, pose: 
 	c.draw_colored_polygon(outline, INK)
 	c.draw_colored_polygon(body, k.jacka)
 	if not back:
-		c.draw_line(Vector2(0, -5), Vector2(0, 3), (k.jacka as Color).darkened(0.35))   # dragkedja
+		c.draw_line(Vector2(0, -5), Vector2(0, 3), (k.jacka as Color).darkened(0.35), 1.0)   # dragkedja
 	for i in 2:
 		var sh := Vector2(-5 + i * 10, -4)
 		limb(c, sh, hands[i], k.jacka, 3.0)
@@ -88,6 +96,14 @@ static func _head(c: CanvasItem, k: Dictionary, h: Vector2, back: bool, wind: fl
 			limb(c, a, m, hair, 3.0)
 			limb(c, m, e, hair, 3.0)
 			blob(c, e, 1.5, 1.2, Color("#e8423a"))
+	elif style == "tofsar":
+		# två höga tofsar som spretar åt sidorna
+		for s in [-1.0, 1.0]:
+			var a := h + Vector2(6.0 * s, -5)
+			var e := a + Vector2(5.0 * s, 3) + drift * 0.6
+			limb(c, a, e, hair, 4.0)
+			blob(c, e + Vector2(0.5 * s, 1), 2.0, 2.4, hair)
+			blob(c, a, 1.5, 1.5, k.extra)
 	elif style == "svans":
 		var a := h + Vector2(0, -7)
 		var dir := -1.0 if wind >= 0.0 else 1.0
@@ -105,22 +121,27 @@ static func _head(c: CanvasItem, k: Dictionary, h: Vector2, back: bool, wind: fl
 		for s in [-1.0, 1.0]:
 			blob(c, h + Vector2(2.7 * s, -1), 2.6, 3.0, Color.WHITE)
 			if face == "aj":
-				c.draw_line(h + Vector2(2.7 * s - 1, -2), h + Vector2(2.7 * s + 1, 0), INK)
-				c.draw_line(h + Vector2(2.7 * s + 1, -2), h + Vector2(2.7 * s - 1, 0), INK)
+				c.draw_line(h + Vector2(2.7 * s - 1, -2), h + Vector2(2.7 * s + 1, 0), INK, 1.0)
+				c.draw_line(h + Vector2(2.7 * s + 1, -2), h + Vector2(2.7 * s - 1, 0), INK, 1.0)
 			else:
 				c.draw_rect(Rect2(h + Vector2(2.7 * s - 0.5 + s * 0.6, -1.2) + look, Vector2(1.2, 1.4)), INK)
 		match face:
 			"oo", "aj":
 				blob(c, h + Vector2(0, 4), 1.4, 1.6, Color("#5a1414"))
+			"arg", "fnys":
+				c.draw_line(h + Vector2(-2.5, 5), h + Vector2(0, 4), INK, 1.0)
+				c.draw_line(h + Vector2(0, 4), h + Vector2(2.5, 5), INK, 1.0)
+			"flin":
+				c.draw_line(h + Vector2(-2.5, 4), h + Vector2(2.5, 3), INK, 1.0)
 			"glad":
-				c.draw_line(h + Vector2(-2.5, 3.5), h + Vector2(-1, 4.5), INK)
-				c.draw_line(h + Vector2(-1, 4.5), h + Vector2(1, 4.5), INK)
-				c.draw_line(h + Vector2(1, 4.5), h + Vector2(2.5, 3.5), INK)
+				c.draw_line(h + Vector2(-2.5, 3.5), h + Vector2(-1, 4.5), INK, 1.0)
+				c.draw_line(h + Vector2(-1, 4.5), h + Vector2(1, 4.5), INK, 1.0)
+				c.draw_line(h + Vector2(1, 4.5), h + Vector2(2.5, 3.5), INK, 1.0)
 			_:
-				c.draw_line(h + Vector2(-2, 4), h + Vector2(2, 4), INK)
+				c.draw_line(h + Vector2(-2, 4), h + Vector2(2, 4), INK, 1.0)
 	# frisyren eller huvudbonaden ovanpå
 	match style:
-		"flator", "svans":
+		"flator", "svans", "tofsar":
 			_cap(c, h, hair, back)
 		"keps":
 			ellipse(c, h + Vector2(0, -4.5), 8.5, 4.5, INK)
@@ -136,7 +157,29 @@ static func _head(c: CanvasItem, k: Dictionary, h: Vector2, back: bool, wind: fl
 			if not back:
 				for s in [-1.0, 1.0]:
 					c.draw_rect(Rect2(h + Vector2(2.7 * s - 2.6, -3.8), Vector2(5.2, 5.6)), INK, false, 1.0)
-				c.draw_line(h + Vector2(-0.2, -1), h + Vector2(0.2, -1), INK)
+				c.draw_line(h + Vector2(-0.2, -1), h + Vector2(0.2, -1), INK, 1.0)
+		"rufs":
+			# kort hår med volym och en lugg som sveper snett över pannan
+			_cap(c, h, hair, back)
+			if back:
+				ellipse(c, h + Vector2(0, -1.5), 9.2, 7.0, hair)
+			else:
+				var sw := drift.x * 0.15
+				var fringe := PackedVector2Array([h + Vector2(-9.2, -1.5), h + Vector2(-7.5, -7.5), h + Vector2(-1, -9.2),
+					h + Vector2(6.5, -7.8), h + Vector2(9.2, -3.5), h + Vector2(7.5 + sw, -0.6), h + Vector2(5.0 + sw, -3.2),
+					h + Vector2(1.0, -3.6), h + Vector2(-3.5, -3.0), h + Vector2(-6.8, -1.0)])
+				var outline := PackedVector2Array()
+				for p in fringe:
+					outline.append(h + (p - h) * 1.08)
+				c.draw_colored_polygon(outline, INK)
+				c.draw_colored_polygon(fringe, hair)
+				# några mörkare hårslingor som följer luggen
+				var dark := hair.darkened(0.35)
+				c.draw_polyline(PackedVector2Array([h + Vector2(-6, -6), h + Vector2(-1, -5.5), h + Vector2(4, -4.6), h + Vector2(6.8 + sw, -2.0)]), dark, 0.7)
+				c.draw_polyline(PackedVector2Array([h + Vector2(-4, -8), h + Vector2(1.5, -7.6), h + Vector2(6.5, -5.8)]), dark, 0.6)
+				c.draw_line(h + Vector2(-8.3, -2), h + Vector2(-8.0, 1.5), hair, 1.4)     # polisonger
+				c.draw_line(h + Vector2(8.3, -2), h + Vector2(8.0, 1.5), hair, 1.4)
+				c.draw_colored_polygon(PackedVector2Array([h + Vector2(-1, -9.2), h + Vector2(4, -8.8), h + Vector2(2.5, -6.8)]), hair.lightened(0.15))
 		"mossa":
 			ellipse(c, h + Vector2(0, -4), 9, 5.5, INK)
 			ellipse(c, h + Vector2(0, -4), 8.2, 4.8, k.extra)
@@ -146,11 +189,15 @@ static func _head(c: CanvasItem, k: Dictionary, h: Vector2, back: bool, wind: fl
 			blob(c, pom, 2.3, 2.3, Color.WHITE)
 			if not back:
 				c.draw_rect(Rect2(h + Vector2(-5, 0.3), Vector2(4, 1)), hair)
+	# arga ögonbryn, ovanpå luggen
+	if not back and face in ["arg", "fnys"]:
+		for s in [-1.0, 1.0]:
+			c.draw_line(h + Vector2(5.5 * s, -6.0), h + Vector2(1.0 * s, -4.0), INK, 1.5)
 	# i storm fladdrar några hårstrån
-	if absf(wind) > 0.55 and style != "keps" and style != "mossa":
+	if absf(wind) > 0.55 and style != "keps" and style != "mossa" and style != "rufs":
 		for i in 3:
 			var base := h + Vector2(-3 + i * 3, -7)
-			c.draw_line(base, base + Vector2(wind * 4 + flutter * (1 + i * 0.3), -2 - i % 2), hair)
+			c.draw_line(base, base + Vector2(wind * 4 + flutter * (1 + i * 0.3), -2 - i % 2), hair, 1.0)
 
 
 static func _cap(c: CanvasItem, h: Vector2, hair: Color, back: bool) -> void:
@@ -247,16 +294,16 @@ static func parent(c: CanvasItem, off: Vector2, p: Dictionary, pos: Vector2, sta
 		"gapar", "klappar":
 			blob(c, mouth, 2, 2.4, Color("#5a1414"))
 		"mobil":
-			c.draw_line(mouth + Vector2(-2, 0), mouth + Vector2(2, 0), INK)
+			c.draw_line(mouth + Vector2(-2, 0), mouth + Vector2(2, 0), INK, 1.0)
 		_:
-			c.draw_line(mouth + Vector2(-2.5, -0.5), mouth + Vector2(0, 0.5), INK)
-			c.draw_line(mouth + Vector2(0, 0.5), mouth + Vector2(2.5, -0.5), INK)
+			c.draw_line(mouth + Vector2(-2.5, -0.5), mouth + Vector2(0, 0.5), INK, 1.0)
+			c.draw_line(mouth + Vector2(0, 0.5), mouth + Vector2(2.5, -0.5), INK, 1.0)
 	return card_at
 
 
 # ================================================================ trampolinen och trädgården
 ## Trampolinen sedd från sidan. dip: hur mycket duken trycks ned (0..10) vid x.
-static func trampoline(c: CanvasItem, cx: float, y: float, dip: float, dip_x: float) -> void:
+static func trampoline(c: CanvasItem, cx: float, y: float, dip: float, dip_x: float, pad := Color("#2a7ae0")) -> void:
 	var half := 46.0
 	# benen och ramen under
 	for x in [-38.0, -14.0, 14.0, 38.0]:
@@ -264,12 +311,12 @@ static func trampoline(c: CanvasItem, cx: float, y: float, dip: float, dip_x: fl
 	c.draw_line(Vector2(cx - 40, y + 17), Vector2(cx + 40, y + 17), INK, 1)
 	# dynan runt kanten (en blå ring) och den svarta duken, lite snett ovanifrån
 	ellipse(c, Vector2(cx, y + 1), half + 2, 8, INK, 28)
-	ellipse(c, Vector2(cx, y + 1), half + 1, 7, Color("#2a7ae0"), 28)
+	ellipse(c, Vector2(cx, y + 1), half + 1, 7, pad, 28)
 	ellipse(c, Vector2(cx, y + 1), half - 4, 4.5, Color("#1c1c26"), 28)
 	if dip > 0.5:
 		# där barnet landar trycks duken ned
 		ellipse(c, Vector2(cx + dip_x, y + 1 + dip * 0.6), 18, 3 + dip * 0.35, Color("#101016"), 20)
-	ellipse(c, Vector2(cx, y + 4), half + 1, 4, Color("#1f60b8"), 28)      # dynans framkant i skugga
+	ellipse(c, Vector2(cx, y + 4), half + 1, 4, pad.darkened(0.25), 28)      # dynans framkant i skugga
 
 
 static func garden_back(c: CanvasItem, wind: float, t: float, nt: float) -> void:
@@ -280,9 +327,7 @@ static func garden_back(c: CanvasItem, wind: float, t: float, nt: float) -> void
 	# granar på kullarna
 	for i in 9:
 		var x := 18.0 + i * 37.0
-		var h := 14.0 + (i * 7) % 9
-		var top := Vector2(x + wind * 1.5 * sin(t * 2 + i), 112 - h)
-		c.draw_colored_polygon(PackedVector2Array([top, Vector2(x - 6, 114), Vector2(x + 6, 114)]), Color("#1f5a34"))
+		spruce(c, Vector2(x, 115), 15.0 + (i * 7) % 9, wind, t + i)
 	# huset: rött med vita knutar, svart tak
 	var hx := 10.0
 	c.draw_rect(Rect2(hx - 1, 94, 70, 57), INK)
@@ -302,17 +347,7 @@ static func garden_back(c: CanvasItem, wind: float, t: float, nt: float) -> void
 		c.draw_rect(Rect2(wx + 8, 111, 5, 5), Color("#3a5a8a"))
 	c.draw_rect(Rect2(hx + 28, 124, 12, 26), Color("#f4f0e4"))
 	c.draw_rect(Rect2(hx + 30, 126, 8, 24), Color("#2a6a4a"))
-	# björken
-	var bx := 222.0
-	c.draw_rect(Rect2(bx - 3, 76, 6, 75), INK)
-	c.draw_rect(Rect2(bx - 2, 76, 4, 75), Color("#f2f2ea"))
-	for y in [84, 97, 108, 121, 135]:
-		c.draw_rect(Rect2(bx - 2 + (y % 3), y, 3, 1), INK)
-	var sway := wind * 5.0 + sin(t * (2.0 + absf(wind) * 6.0)) * (0.5 + absf(wind) * 2.5)
-	for i in 7:
-		var a := i * 0.9
-		var p := Vector2(bx + cos(a) * 14 + sway * (0.6 + i * 0.07), 70 + sin(a) * 9 - i)
-		blob(c, p, 9, 7, Color("#3e9a3a").lerp(Color("#5ab848"), (i % 3) * 0.3))
+	birch(c, Vector2(222, 151), 1.0, wind, t)
 	# flaggstången med svenska flaggan
 	var fx := 302.0
 	c.draw_rect(Rect2(fx - 1, 40, 2, 111), Color("#f4f0e4"))
@@ -364,8 +399,170 @@ static func lights(c: CanvasItem, nt: float) -> void:
 
 ## En pratbubbla med svans mot munnen.
 static func bubble(c: CanvasItem, r: Rect2, tail: Vector2) -> void:
-	var tip := PackedVector2Array([r.position + Vector2(r.size.x - 14, r.size.y - 1), r.position + Vector2(r.size.x - 6, r.size.y - 1), tail])
+	var bx := clampf(tail.x - 4, r.position.x + 4, r.end.x - 14)     # svansen börjar ovanför munnen
+	var tip := PackedVector2Array([Vector2(bx, r.end.y - 1), Vector2(bx + 8, r.end.y - 1), tail])
 	c.draw_colored_polygon(PackedVector2Array([tip[0] + Vector2(-1, 0), tip[1] + Vector2(1, 0), tail + Vector2(0, 1)]), INK)
 	c.draw_rect(r.grow(1), INK)
 	c.draw_rect(r, Color.WHITE)
 	c.draw_colored_polygon(tip, Color.WHITE)
+
+
+## Staketet mellan trädgårdarna i duellen, från bakre staketet och fram mot oss.
+static func side_fence(c: CanvasItem, x: float) -> void:
+	for i in 7:
+		var k := i / 6.0
+		var px := x - k * 8.0
+		var foot := 151.0 + k * 27.0
+		var hgt := 23.0 + k * 10.0
+		c.draw_rect(Rect2(px - 2, foot - hgt, 5, hgt), INK)
+		c.draw_rect(Rect2(px - 1, foot - hgt + 1, 3, hgt - 1), Color("#f4f0e4"))
+	for rail in [0.3, 0.7]:
+		c.draw_line(Vector2(x, 151 - 23 * (1 - rail)), Vector2(x - 8, 178 - 33 * (1 - rail)), Color("#d8d4c8"), 2.0)
+
+
+
+# ================================================================ träd
+## Ett litet tal 0..1 som alltid blir samma för samma i (för träd som ser slumpade ut men står still).
+static func _hash(i: float) -> float:
+	return fposmod(sin(i * 12.9898) * 43758.5453, 1.0)
+
+
+## En gran: våningar av hängande grenar, mörkare på skuggsidan, och en liten stam.
+static func spruce(c: CanvasItem, foot: Vector2, h: float, wind: float, t: float, scale := 1.0) -> void:
+	h *= scale
+	var w := h * 0.42
+	c.draw_rect(Rect2(foot + Vector2(-0.75, -2.5) * scale, Vector2(1.5, 3) * scale), Color("#3a2a1c"))
+	var tiers := 5
+	var sway := (wind * 1.2 + sin(t * 2.0) * 0.3) * scale
+	for k in tiers:
+		var u := float(k) / tiers                     # 0 i toppen
+		var top := foot + Vector2(sway * (1.0 - u), -h + h * u * 0.78)
+		var bot := foot.y - h * 0.08 - (tiers - 1 - k) * h * 0.17
+		var half := w * (0.35 + 0.65 * (u + 1.0 / tiers))
+		var droop := 1.6 * scale
+		var dark := Color("#173f28")
+		var mid := Color("#245a36").lerp(Color("#2f6e40"), _hash(k + foot.x) * 0.5)
+		var notch := Vector2(foot.x, bot - droop * 0.5)
+		c.draw_colored_polygon(PackedVector2Array([top, Vector2(foot.x - half, bot + droop), notch]), dark)
+		c.draw_colored_polygon(PackedVector2Array([top, notch, Vector2(foot.x + half, bot + droop)]), dark)
+		c.draw_colored_polygon(PackedVector2Array([top, Vector2(foot.x - half + 1.0 * scale, bot + droop * 0.6), Vector2(foot.x - half * 0.15, bot - droop * 0.3)]), mid)
+
+
+## En björk: vit stam med svarta fläckar, några grenar och en luftig krona av lövklumpar i flera
+## gröna toner, som gungar i vinden (mer i toppen än nära stammen).
+static func birch(c: CanvasItem, foot: Vector2, scale: float, wind: float, t: float) -> void:
+	var h := 100.0 * scale
+	var sway := wind * 5.0 + sin(t * (2.0 + absf(wind) * 6.0)) * (0.5 + absf(wind) * 2.5)
+	var top := foot + Vector2(sway * 0.3, -h)
+	# stammen smalnar av uppåt
+	var trunk := PackedVector2Array([foot + Vector2(-3.2, 0) * scale, foot + Vector2(3.2, 0) * scale, top + Vector2(0.8, 0), top + Vector2(-0.8, 0)])
+	c.draw_colored_polygon(PackedVector2Array([trunk[0] + Vector2(-1, 0), trunk[1] + Vector2(1, 0), trunk[2] + Vector2(1, 0), trunk[3] + Vector2(-1, 0)]), INK)
+	c.draw_colored_polygon(trunk, Color("#eeeee4"))
+	for k in 14:
+		var u := 0.05 + k * 0.064
+		var p := foot.lerp(top, u)
+		var hw := lerpf(3.0 * scale, 0.8, u)
+		var mx := p.x - hw + _hash(k) * hw * 1.4
+		c.draw_rect(Rect2(mx, p.y, maxf(1.0, hw * 0.8), 1.0), INK)
+	# grenar
+	for k in 6:
+		var u := 0.42 + k * 0.09
+		var s := -1.0 if k % 2 == 0 else 1.0
+		var p := foot.lerp(top, u)
+		var tip := p + Vector2(s * (10 + _hash(k + 3) * 8) * scale + sway * u, -6 * scale)
+		c.draw_line(p, tip, Color("#4a3a30"), 1.0)
+	# kronan: först skuggiga klumpar, sedan mellangröna, sist ljusa där solen tar
+	var ctr := foot + Vector2(0, -h * 0.68)
+	var layers := [[Color("#285e26"), Vector2(1.0, 1.6), 1.0], [Color("#3e8a34"), Vector2.ZERO, 0.9], [Color("#6fb24c"), Vector2(-1.2, -1.4), 0.55]]
+	for L in layers:
+		for k in 46:
+			var a := _hash(k * 1.7) * TAU
+			var r := sqrt(_hash(k * 3.1))
+			var off := Vector2(cos(a) * 22.0, sin(a) * 27.0) * r * scale
+			if L[2] < 0.6 and off.y > 0.0:
+				continue                              # ljuset bara i övre halvan
+			if off.y > 8.0 * scale:
+				off.y += (off.y - 8.0 * scale) * 0.6  # nedre grenar hänger
+			var bend := sway * (0.4 + (1.0 - (off.y + 27.0) / 54.0) * 0.6)
+			var flutter := sin(t * 5.0 + k) * 0.4 * (0.3 + absf(wind))
+			var size: float = (2.2 + _hash(k * 5.3) * 2.0) * scale * L[2]
+			c.draw_circle(ctr + off + L[1] * scale + Vector2(bend + flutter, 0), size, L[0])
+
+
+# ================================================================ duellens bakgrund
+## Utsikten i duellen: hav, en kulle med ett hus långt bort, en väg med trafik och en gräsäng.
+## traffic: [{x, lane, dir, typ ("bil"/"lastbil"), col}].
+static func duel_back(c: CanvasItem, wind: float, t: float, nt: float, traffic: Array) -> void:
+	# havet vid horisonten, med glitter
+	c.draw_rect(Rect2(-200, 100, 720, 14), Color("#3a6ea8").lerp(Color("#1a2a48"), nt))
+	c.draw_rect(Rect2(-200, 100, 720, 1), Color("#8ab8e0").lerp(Color("#2a3a58"), nt))
+	for k in 18:
+		var gx := fposmod(_hash(k) * 520.0 + t * (2.0 + _hash(k + 9) * 3.0), 520.0) - 100.0
+		var gy := 102.0 + _hash(k * 2.3) * 10.0
+		if sin(t * 3.0 + k * 1.9) > 0.3:
+			c.draw_rect(Rect2(gx, gy, 2, 1), Color(1, 1, 1, 0.6 * (1.0 - nt)))
+	# en ö långt ut
+	ellipse(c, Vector2(40, 101), 18, 3, Color("#4a6a5a").lerp(Color("#1a2a2a"), nt), 20)
+	# kullen med huset
+	ellipse(c, Vector2(250, 116), 92, 30, Color("#4e8a4a"), 40)
+	ellipse(c, Vector2(250, 118), 92, 28, Color("#58984e"), 40)
+	var hp := Vector2(250, 88)
+	c.draw_rect(Rect2(hp + Vector2(-7, -6), Vector2(14, 7)), Color("#f0e6c8"))
+	c.draw_colored_polygon(PackedVector2Array([hp + Vector2(-9, -6), hp + Vector2(0, -12), hp + Vector2(9, -6)]), Color("#7a2a22"))
+	c.draw_rect(Rect2(hp + Vector2(-4, -4), Vector2(2, 2)), Color("#ffd870") if nt > 0.3 else Color("#3a5a8a"))
+	c.draw_rect(Rect2(hp + Vector2(2, -4), Vector2(2, 2)), Color("#ffd870") if nt > 0.3 else Color("#3a5a8a"))
+	c.draw_rect(Rect2(hp + Vector2(-1, -3), Vector2(2, 4)), Color("#5a3a2a"))
+	for k in 5:
+		spruce(c, Vector2(214 + k * 9 + _hash(k) * 4, 98 + absf(k - 2) * 1.5), 9.0 + _hash(k + 2) * 5, wind, t + k, 1.0)
+	spruce(c, Vector2(282, 96), 12.0, wind, t + 7)
+	birch(c, Vector2(296, 100), 0.18, wind, t)
+	# ängen fram till vägen
+	c.draw_rect(Rect2(-200, 113, 720, 7), Color("#5a9a48"))
+	# vägen
+	c.draw_rect(Rect2(-200, 120, 720, 9), Color("#4a4a52"))
+	c.draw_rect(Rect2(-200, 120, 720, 1), Color("#8a8a90"))
+	c.draw_rect(Rect2(-200, 128, 720, 1), Color("#8a8a90"))
+	for x in range(-200, 520, 14):
+		c.draw_rect(Rect2(x, 124, 7, 1), Color("#e8e4d0"))
+	var lanes := [traffic.filter(func(v): return v.dir > 0), traffic.filter(func(v): return v.dir < 0)]
+	for lane in lanes:
+		for v in lane:
+			_vehicle(c, v, nt)
+	# gräset närmast, med tuvor
+	c.draw_rect(Rect2(-200, 129, 720, 22), Color("#4f9a3e"))
+	for k in 30:
+		var gx := -60.0 + _hash(k * 4.1) * 440.0
+		var gy := 131.0 + _hash(k * 6.7) * 18.0
+		c.draw_rect(Rect2(gx, gy, 3, 1), Color("#64b04c"))
+
+
+## En bil eller lastbil på vägen. Bilar kör i den bortre filen åt höger, i den närmre åt vänster.
+static func _vehicle(c: CanvasItem, v: Dictionary, nt: float) -> void:
+	var dir: float = v.dir
+	var y := 123.0 if dir > 0 else 127.0
+	var x: float = v.x
+	var col: Color = v.col
+	var wheel := Color("#141418")
+	if v.typ == "lastbil":
+		# släpet bakom, hytten fram
+		var trailer := Rect2(x - 9 - dir * 3, y - 7, 15, 6)
+		c.draw_rect(trailer.grow(0.5), INK)
+		c.draw_rect(trailer, col)
+		var cab := Rect2(x + (4.5 if dir > 0 else -9.5), y - 6, 5, 5)
+		c.draw_rect(cab.grow(0.5), INK)
+		c.draw_rect(cab, Color("#d84a3a") if col != Color("#d84a3a") else Color("#3a6ad8"))
+		c.draw_rect(Rect2(cab.position.x + (3 if dir > 0 else 0), cab.position.y + 1, 2, 2), Color("#a8d8f0"))
+		for wx in [-8.0, -4.0, 2.0, 6.0]:
+			c.draw_rect(Rect2(x + wx * dir - 1, y - 1, 2, 1.5), wheel)
+		if nt > 0.3:
+			c.draw_rect(Rect2(x + (9.5 if dir > 0 else -10.5), y - 2, 1, 1), Color("#fff2a0"))
+	else:
+		c.draw_rect(Rect2(x - 5, y - 3.5, 10, 3).grow(0.5), INK)
+		c.draw_rect(Rect2(x - 5, y - 3.5, 10, 3), col)
+		c.draw_rect(Rect2(x - 2.5 - dir * 0.5, y - 6, 5, 2.5), col.darkened(0.15))
+		c.draw_rect(Rect2(x - 2 - dir * 0.5, y - 5.5, 4, 1.5), Color("#a8d8f0"))
+		c.draw_rect(Rect2(x - 4, y - 1, 2, 1.5), wheel)
+		c.draw_rect(Rect2(x + 2, y - 1, 2, 1.5), wheel)
+		if nt > 0.3:
+			c.draw_rect(Rect2(x + 5 * dir - (0 if dir > 0 else 1), y - 3, 1, 1), Color("#fff2a0"))
+			c.draw_rect(Rect2(x - 5 * dir - (1 if dir > 0 else 0), y - 3, 1, 1), Color("#ff3a3a"))

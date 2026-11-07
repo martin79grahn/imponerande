@@ -32,16 +32,37 @@ const TRICKS := {
 	"dubbelvolt": {"namn": "DUBBELVOLT", "niva": 6, "poang": 180, "typ": "luft", "kombo": "VOLTA, SEN SAMMA VOLT IGEN", "tid": 1.0, "varv": 2},
 	"superman": {"namn": "SUPERMANHOPPET", "niva": 6, "poang": 110, "typ": "luft", "kombo": "} } + TRICK", "tid": 0.6},
 	"rygg": {"namn": "RYGGSTUDS", "niva": 7, "poang": 40, "typ": "landning", "kombo": "HÅLL ^ VID LANDNING"},
-	"rmr": {"namn": "RUMPA-MAGE-RYGG", "niva": 7, "poang": 200, "typ": "kedja", "kombo": "RUMP-, MAG- OCH RYGGSTUDS I RAD"},
-	"trippelvolt": {"namn": "TRIPPELVOLT", "niva": 8, "poang": 350, "typ": "luft", "kombo": "VOLTA TRE GÅNGER I SAMMA HOPP", "tid": 1.35, "varv": 3},
+	"rmr": {"namn": "RUMPA-MAGE-RYGG", "niva": 7, "poang": 200, "typ": "kedja", "kombo": "RUMPA, MAGE, RYGG I RAD"},
+	"trippelvolt": {"namn": "TRIPPELVOLT", "niva": 7, "poang": 350, "typ": "luft", "kombo": "VOLTA TRE GÅNGER I SAMMA HOPP", "tid": 1.35, "varv": 3},
 	"pannkaka": {"namn": "FLYGANDE PANNKAKAN", "niva": 8, "poang": 160, "typ": "luft", "kombo": "_ ^ + TRICK", "tid": 0.7},
 }
 ## Ordningen i trickboken.
 const BOK := ["rakt", "stjarna", "rumpa", "kna", "mage", "volt_bak", "snurr", "volt_fram", "kanonkula",
 	"helikopter", "dubbelvolt", "superman", "rygg", "rmr", "trippelvolt", "pannkaka"]
 
-## XP som krävs för varje nivå (nivå 1 från början).
+## Stjärnor som krävs för varje nivå (nivå 1 från början). Föräldern ger rundan ett betyg 1–10,
+## och betyget blir lika många stjärnor. Sista tricket, flygande pannkakan, kräver 60.
+const NIVA_STJARNOR := [0, 4, 9, 15, 23, 33, 45, 60]
+## Den gamla XP-tabellen, bara för att flytta över gamla sparfiler.
 const NIVA_XP := [0, 250, 700, 1400, 2400, 3800, 5600, 8000]
+
+## Grannen (blond med rosa studsmatta) och hennes storebror, som dömer duellen.
+const GRANNE := {"namn": "GRANNEN LISA", "har": "tofsar", "jacka": Color("#e85aa8"), "byxor": Color("#f2e6f0"), "harfarg": Color("#f6dc6a"), "hy": Color("#f8d6b8"), "extra": Color("#ff4a9a")}
+const BROR := {"namn": "STOREBROR", "har": "rufs", "jacka": Color("#1c1c22"), "byxor": Color("#8a8c94"), "harfarg": Color("#1e4a30"), "hy": Color("#f0c8a4"), "extra": Color("#1e4a30")}
+const DUELL_MAL := 50
+
+## Filmen när duellen låses upp: [sekund, vem, replik]. Vem: foralder, granne, bror, "" (ingen).
+const FILM := [
+	[0.0, "foralder", "IMPONERANDE!"],
+	[2.2, "foralder", "DU ÄR VÄRLDENS BÄSTA STUDSARE!"],
+	[4.4, "granne", "GRRR..."],
+	[8.4, "granne", "FNYS!"],
+	[9.8, "granne", "HAH, ÄR DET DÄR ALLT DU KAN?"],
+	[12.8, "granne", "JAG UTMANAR DIG TILL EN DUELL!"],
+	[15.6, "granne", "FÖRST TILL 50 POÄNG AV|MIN STOREBROR VINNER."],
+	[19.4, "bror", "...OKEJ DÅ. JAG DÖMER."],
+	[22.0, "", ""],
+]
 
 const REPLIKER := {
 	"krasch": ["AJ! FÖRSIKTIGT!", "GICK DET BRA?!", "INTE PÅ HUVUDET!", "OJ OJ OJ, AJ!"],
@@ -54,6 +75,14 @@ const REPLIKER := {
 	"MAMMA": ["SÅ GRACIÖST!", "AKTA SÅ DU INTE RAMLAR!", "MAMMA ÄR STOLT!"],
 	"PAPPA": ["HÖGRE! HÖGRE!", "SÅ GJORDE JAG OCKSÅ!", "PAPPA ÄR STOLT!"],
 	"storm": ["DET BÖRJAR BLÅSA!", "KOM IN SNART, DET ÅSKAR!", "HÅLL I MÖSSAN!"],
+	"bror_lag": ["MEH.", "GÄSP.", "VAR DET ALLT?", "SNARK."],
+	"bror_mellan": ["OKEJ, INTE DÅLIGT.", "HELT OKEJ.", "MJA, GODKÄNT."],
+	"bror_hog": ["SNYGGT, FAKTISKT.", "OJ, DET DÄR VAR BRA.", "RESPEKT."],
+	"bror_tio": ["OKEJ, DET VAR SJUKT!", "VAD?! TIO!", "JAG SA INGET..."],
+	"bror_krasch": ["AJ. NOLL POÄNG.", "HAHA, PLATTFALL!", "DET DÄR GJORDE ONT."],
+	"bror_rumpa": ["RUMPAN IGEN?", "HAHA, VILKEN RUMPA."],
+	"bror_rutten": ["DET HAR JAG REDAN SETT.", "SAMMA IGEN? TRÅKIGT."],
+	"granne": ["HAH!", "SLÅ DET DÅ!", "LÄTT SOM EN PLÄTT!", "KOLLA PÅ MIG!", "FNYS!"],
 	"rutten": ["SAMMA IGEN?", "DET DÄR HAR JAG SETT.", "NÅGOT NYTT KANSKE?"],
 }
 

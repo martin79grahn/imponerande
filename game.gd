@@ -60,6 +60,9 @@ var react_t := 0.0
 var perfect_t := 0.0
 var sounds: Array = []
 var weather := "sol"
+# duellen mot grannen: storebror dömer, ingen tid, först till Data.DUELL_MAL poäng
+var duel := false
+var poang := 0                  # storebrors poänglappar ihop
 
 
 func start(k: int, p: int, lvl: int, w: String) -> void:
@@ -68,7 +71,7 @@ func start(k: int, p: int, lvl: int, w: String) -> void:
 	level = lvl
 	weather = w
 	phase = "sta"
-	time_left = ROUND
+	time_left = ROUND if not duel else INF
 
 
 func unlocked(id: String) -> bool:
@@ -147,7 +150,7 @@ func update(dt: float, held: Dictionary) -> void:
 	clock += dt
 	if phase != "sta" and phase != "slut":
 		time_left = maxf(0.0, time_left - dt)
-	attention = clampf(attention - dt * 0.05, 0.0, 1.0)
+	attention = clampf(attention - dt * 0.05, 0.0, 1.0) if not duel else 1.0
 	perfect_t = maxf(0.0, perfect_t - dt)
 	line_t = maxf(0.0, line_t - dt)
 	kid_line_t = maxf(0.0, kid_line_t - dt)
@@ -246,7 +249,7 @@ func _land(held: Dictionary) -> void:
 		rot = 0.0
 		spin = 0.0
 		sounds.append("krasch")
-		_say(Data.REPLIKER.krasch.pick_random())
+		_say(Data.REPLIKER["bror_krasch" if duel else "krasch"].pick_random())
 		card = 0
 		card_t = 1.4
 		cards.append(0)
@@ -292,7 +295,7 @@ func _land(held: Dictionary) -> void:
 	if distinct >= 2:
 		pts *= 1.0 + 0.3 * (distinct - 1)
 	pts *= 1.0 + 0.2 * hojd
-	var likes: Array = Data.PARENTS[par].gillar
+	var likes: Array = Data.PARENTS[par].gillar if not duel else []
 	for id in ids:
 		if id in likes:
 			pts *= 1.2
@@ -320,16 +323,24 @@ func _land(held: Dictionary) -> void:
 	if ids == ["rakt"]:
 		attention = maxf(0.0, attention - 0.08)
 		if randf() < 0.2:
-			_say(Data.REPLIKER.lag.pick_random() if looking else Data.REPLIKER.mobil.pick_random())
+			_say(Data.REPLIKER["bror_lag" if duel else ("lag" if looking else "mobil")].pick_random())
 	else:
-		card = clampi(int(round(pts / 16.0)), 1, 10)
+		card = clampi(int(round(pts / (24.0 if duel else 16.0))), 1, 10)
+		poang += card if duel else 0
 		card_t = 1.5
 		cards.append(card)
 		attention = clampf(attention + card * 0.06, 0.0, 1.0)
 		react = "kort"
 		react_t = 1.2
 		var say := ""
-		if not looking:
+		if duel:
+			var bk := "bror_lag" if card <= 3 else ("bror_mellan" if card <= 6 else ("bror_hog" if card <= 9 else "bror_tio"))
+			if style == "rumpa" and rumpkedja >= 2:
+				bk = "bror_rumpa"
+			elif stale >= 2:
+				bk = "bror_rutten"
+			say = Data.REPLIKER[bk].pick_random() if randf() < 0.6 else ""
+		elif not looking:
 			say = Data.REPLIKER.mobil.pick_random()
 		elif style == "rumpa" and rumpkedja >= 2:
 			say = Data.REPLIKER.rumpa.pick_random()
@@ -342,7 +353,8 @@ func _land(held: Dictionary) -> void:
 		else:
 			var key := "lag" if card <= 3 else ("mellan" if card <= 6 else ("hog" if card <= 9 else "tio"))
 			say = Data.REPLIKER[key].pick_random()
-		_say(say)
+		if say != "":
+			_say(say)
 		if card >= 7:
 			sounds.append("applad")
 		elif card >= 5:

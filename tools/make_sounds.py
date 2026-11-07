@@ -158,14 +158,46 @@ def song(bpm, lead, bass, drums, duty=0.25):
     return out[: int(SR * step * total)]
 
 
-# menyn: en glad, lugn trudelutt i C-dur
-menu_lead = [(72, 2), (76, 2), (79, 2), (76, 2), (77, 2), (81, 2), (79, 4),
-             (76, 2), (77, 2), (79, 2), (84, 2), (83, 4), (79, 4),
-             (81, 2), (79, 2), (77, 2), (76, 2), (74, 2), (76, 2), (77, 4),
-             (79, 2), (76, 2), (74, 2), (71, 2), (72, 8)]
-menu_bass = [(48, 4), (55, 4), (53, 4), (55, 4), (48, 4), (52, 4), (55, 4), (55, 4),
-             (53, 4), (48, 4), (50, 4), (53, 4), (55, 4), (55, 4), (48, 8)]
-save("musik_meny", song(116, menu_lead, menu_bass, "k.h.s.h.k.h.s.hh"), 0.7)
+# menyn: lugn, drömsk 8-bit i stil med stillsam spelmusik. Glesa toner som klingar ut länge över
+# mjuka ackord (Fmaj7, C/E, Am7, G6 ...), med eko. Egen melodi.
+def calm(bpm, voices, beats):
+    """voices: listor med (not, start i slag, längd i slag, volym). Slingan är `beats` slag lång och
+    det som klingar ut efter slutet läggs på början, så att den loopar utan skarv."""
+    beat = 60 / bpm
+    n = int(SR * beat * beats)
+    out = np.zeros(n + SR * 6)
+    for notes in voices:
+        for note, start, length, vol in notes:
+            dur = beat * length + 2.5
+            f = midi(note)
+            tone = tri(f, dur) * 0.7 + pulse(f, dur, 0.5) * 0.12 + pulse(f * 2, dur, 0.25) * 0.04
+            x = t(dur)
+            e = np.minimum(1, x / 0.02) * np.exp(-x * 1.1)
+            i = int(start * beat * SR)
+            out[i:i + len(tone)] += tone * e * vol
+    # eko
+    for k, g in ((int(0.43 * SR), 0.35), (int(0.86 * SR), 0.15)):
+        out[k:] += out[:-k] * g
+    loop = out[:n].copy()
+    tail = out[n:]
+    loop[: len(tail)] += tail[: n]
+    return loop
+
+
+CALM = [(53, (65, 69, 72, 76)), (52, (64, 67, 72, 76)), (45, (64, 67, 69, 72)), (43, (62, 67, 69, 71)),
+        (53, (65, 69, 72, 77)), (48, (64, 67, 72, 74)), (50, (62, 65, 69, 72)), (43, (62, 67, 71, 74))]
+calm_bass, calm_arp = [], []
+for bar, (root, tones) in enumerate(CALM):
+    b0 = bar * 4
+    calm_bass.append((root, b0, 4, 0.55))
+    for k, beat in enumerate((0, 1, 2, 3)):
+        if bar % 2 == 1 and k == 3:
+            continue
+        calm_arp.append((tones[k], b0 + beat + 0.5 * (k % 2), 1, 0.22))
+calm_melody = [(81, 1, 2, 0.32), (79, 3, 1, 0.26), (76, 6, 2, 0.32), (74, 9, 1, 0.26), (76, 10, 2, 0.3),
+               (72, 14, 2, 0.3), (81, 17, 1, 0.3), (84, 18, 2, 0.32), (79, 22, 2, 0.28), (77, 25, 2, 0.3),
+               (76, 27, 1, 0.26), (74, 30, 2, 0.3)]
+save("musik_meny", calm(66, [calm_bass, calm_arp, calm_melody], 32), 1.2)
 
 # spelet: en driv i 80-talets new wave-stil, a-moll med pulserande oktavbas och arpeggio.
 # Melodin är egen (ingen cover): Am F C G Am F G E.
