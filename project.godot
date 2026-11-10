@@ -4,7 +4,7 @@ config_version=5
 
 [application]
 
-config/version="1.4.0"
+config/version="1.5.0"
 config/name="Imponerande!"
 config/description="Imponerande! – studsa på trampolinen och imponera på mamma eller pappa"
 run/main_scene="res://main.tscn"
@@ -47,5 +47,5 @@ environment/defaults/default_clear_color=Color(0.1, 0.1, 0.16, 1)
 [update_checker]
 
 repo="martin79grahn/imponerande"
-store_url="http://192.168.0.97:8787"
+store_url="http://192.168.0.97:8787,http://100.85.197.108:8787"
 language="sv"
