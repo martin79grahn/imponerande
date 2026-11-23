@@ -4,7 +4,7 @@ config_version=5
 
 [application]
 
-config/version="1.5.0"
+config/version="1.6.0"
 config/name="Imponerande!"
 config/description="Imponerande! – studsa på trampolinen och imponera på mamma eller pappa"
 run/main_scene="res://main.tscn"
